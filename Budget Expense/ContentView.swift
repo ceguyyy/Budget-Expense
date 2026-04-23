@@ -1,21 +1,31 @@
+
 //
 //  ContentView.swift
 //  Budget Expense
-//
-//  Created by Christian Gunawan on 23/04/26.
 //
 
 import SwiftUI
 
 struct ContentView: View {
+    @State private var store = AppStore()
+
     var body: some View {
-        VStack {
-            Image(systemName: "globe")
-                .imageScale(.large)
-                .foregroundStyle(.tint)
-            Text("Hello, world!")
+        TabView {
+            Tab("Overview", systemImage: "chart.bar.fill") {
+                DashboardView()
+            }
+            Tab("Wallets", systemImage: "wallet.bifold") {
+                DebitView()
+            }
+            Tab("Credit", systemImage: "creditcard.fill") {
+                CreditCardListView()
+            }
+            Tab("Piutang", systemImage: "person.2.fill") {
+                DebtListView()
+            }
         }
-        .padding()
+        .environment(store)
+        .preferredColorScheme(.dark)
     }
 }
 
