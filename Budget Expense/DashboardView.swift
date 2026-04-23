@@ -13,8 +13,8 @@ enum ChartRange: String, CaseIterable {
     case thisYear = "This Year"
 }
 
-// MARK: - Exchange Rate Response
-struct ExchangeRateResponse: Codable {
+// MARK: - Exchange Rate Response (Dashboard-specific)
+struct DashboardExchangeRateResponse: Codable {
     let conversion_rates: [String: Double]?
 }
 
@@ -26,6 +26,10 @@ struct DashboardView: View {
     // ✅ State for universal add sheet & CC edit
     @State private var showUniversalAdd = false
     @State private var editCCTarget: CreditCard?
+    
+    // ✅ State for FAB Menu Options
+    @State private var showSplitBill = false
+    @State private var showOCRScanner = false
     
     // ✅ State for Swiping Cards, Show/Hide Balance, & Chart Filter
     @State private var currentCardIndex = 0
@@ -57,17 +61,32 @@ struct DashboardView: View {
                         analyticsSection
                         
                         recentTransactionsSection
+                        
+                        
                     }
                     .padding(.top, 8)
                     .padding(.bottom, 120) // Extra padding so FAB doesn't block content
                 }
                 
-                // FAB with Orange style
-                fab
+                // FAB Menu with expandable options
+                HStack {
+                    Spacer()
+                    FABMenuView(
+                        showUniversalAdd: $showUniversalAdd,
+                        showSplitBill: $showSplitBill,
+                        showOCRScanner: $showOCRScanner
+                    )
+                    .padding(.trailing, 20)
+                    .padding(.bottom, 20)
+                }
             }
             .navigationBarHidden(true)
             .sheet(isPresented: $showUniversalAdd) {
                 UniversalAddTransactionView()
+                    .environment(store)
+            }
+            .sheet(isPresented: $showSplitBill) {
+                SplitBillView()
                     .environment(store)
             }
             .sheet(item: $editCCTarget) { card in
@@ -80,7 +99,7 @@ struct DashboardView: View {
             }
         }
     }
-    
+
     // MARK: - Fetch Exchange Rate
     
     private func fetchExchangeRateIfNeeded() async {
@@ -94,7 +113,7 @@ struct DashboardView: View {
         
         do {
             let (data, _) = try await URLSession.shared.data(from: url)
-            let response = try JSONDecoder().decode(ExchangeRateResponse.self, from: data)
+            let response = try JSONDecoder().decode(DashboardExchangeRateResponse.self, from: data)
             
             if let rates = response.conversion_rates, let idrRate = rates["IDR"] {
                 await MainActor.run {
@@ -196,9 +215,11 @@ struct DashboardView: View {
                     .fill(Color(red: 0.45, green: 0.2, blue: 0.9).opacity(0.2))
                     .frame(width: 44, height: 44)
 
-                Text("CG")
-                    .font(.system(size: 16, weight: .bold))
-                    .foregroundColor(Color(red: 0.45, green: 0.2, blue: 0.9))
+                Image("image_logo") // nama asset kamu di Assets.xcassets
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 28, height: 28)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
             }
             
             Spacer()
@@ -218,7 +239,11 @@ struct DashboardView: View {
                         .font(.title3)
                         .foregroundStyle(.white)
                 }
+                
             }
+            
+            
+            
         }
         .padding(.horizontal, 16)
     }
@@ -468,28 +493,6 @@ struct DashboardView: View {
             }
         }
     }
-
-    // MARK: - FAB
-    
-    private var fab: some View {
-        Button {
-            showUniversalAdd = true
-        } label: {
-            Image(systemName: "plus")
-                .font(.title2.bold())
-                .foregroundStyle(.white)
-                .frame(width: 64, height: 64)
-                .background(Color(red: 0.95, green: 0.4, blue: 0.2)) // Orange FAB
-                .clipShape(Circle())
-                .shadow(color: Color(red: 0.95, green: 0.4, blue: 0.2).opacity(0.4), radius: 8, x: 0, y: 4)
-                .glassEffect(
-                    .regular.tint(Color(white: 0.7)),
-                    in: Circle()
-                )
-        }
-        .padding(.trailing, 20)
-        .padding(.bottom, 20)
-    }
 }
 
 // MARK: - Transaction Ref Row
@@ -574,6 +577,7 @@ struct MetricTile: View {
 
 struct UniversalAddTransactionView: View {
     @Environment(AppStore.self) private var store
+    @Environment(\.categoryManager) private var categoryManager
     @Environment(\.dismiss) private var dismiss
 
     @State private var selectedAccountId = ""
@@ -583,11 +587,16 @@ struct UniversalAddTransactionView: View {
     @State private var note = ""
     @State private var date = Date()
 
-    private let inflowCats  = ["Salary", "Transfer In", "Sales", "Refund", "Gift", "Other"]
-    private let outflowCats = ["Food", "Transport", "Shopping", "Bills", "Entertainment", "Health", "Travel", "Other"]
-    
     private var isCC: Bool { selectedAccountId.hasPrefix("C-") }
-    private var categories: [String] { (isCC || txType == .outflow) ? outflowCats : inflowCats }
+    
+    // ✅ Getting Dynamic Categories from CategoryManager
+    private var categories: [String] {
+        if isCC || txType == .outflow {
+            return categoryManager.categoryNames(for: .outflow)
+        } else {
+            return categoryManager.categoryNames(for: .inflow)
+        }
+    }
     
     private var currencySymbol: String {
         if let w = store.wallets.first(where: { "W-\($0.id)" == selectedAccountId }) { return w.currency.symbol }

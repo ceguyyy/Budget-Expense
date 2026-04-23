@@ -16,9 +16,7 @@ struct DebtListView: View {
 
     var body: some View {
         NavigationStack {
-            // ✅ Menggunakan ZStack dengan bottomTrailing untuk FAB
             ZStack(alignment: .bottomTrailing) {
-                // ✅ background aman full screen
                 Color.appBg
                     .ignoresSafeArea()
 
@@ -28,7 +26,6 @@ struct DebtListView: View {
                     debtList
                 }
                 
-                // ✅ Tambahkan FAB di sini
                 fab
             }
             .navigationTitle("Receivables")
@@ -80,7 +77,6 @@ struct DebtListView: View {
                         .listRowBackground(Color.clear)
                         .listRowSeparator(.hidden)
                         .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
-                        // ✅ Context Menu untuk kemudahan edit / hapus
                         .contextMenu {
                             Button {
                                 editTarget = debt
@@ -150,7 +146,6 @@ struct DebtListView: View {
                 .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
             }
 
-            // ✅ Spacer agar elemen terakhir list tidak terhalang FAB
             Color.clear.frame(height: 80)
                 .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden)
@@ -227,65 +222,116 @@ struct DebtListView: View {
 
 struct DebtRow: View {
     let debt: Debt
+    @State private var isExpanded = false
 
     var body: some View {
-        HStack(spacing: 14) {
-            ZStack {
-                Circle()
-                    .fill(debt.isSettled ? Color.neonGreen.opacity(0.1)
-                                         : Color(red: 0.3, green: 0.6, blue: 1.0).opacity(0.12))
-                    .frame(width: 46, height: 46)
+        VStack(spacing: 0) {
+            HStack(spacing: 14) {
+                ZStack {
+                    Circle()
+                        .fill(debt.isSettled ? Color.neonGreen.opacity(0.1)
+                                             : Color(red: 0.3, green: 0.6, blue: 1.0).opacity(0.12))
+                        .frame(width: 46, height: 46)
 
-                Text(debt.initials)
-                    .font(.subheadline.bold())
-                    .foregroundStyle(debt.isSettled ? .neonGreen
-                                                    : Color(red: 0.3, green: 0.6, blue: 1.0))
-            }
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(debt.personName)
-                    .font(.headline)
-                    .foregroundStyle(.white)
-                    .lineLimit(1)
-
-                if !debt.note.isEmpty {
-                    Text(debt.note)
-                        .font(.caption)
-                        .foregroundStyle(.glassText)
-                        .lineLimit(1)
+                    Text(debt.initials)
+                        .font(.subheadline.bold())
+                        .foregroundStyle(debt.isSettled ? .neonGreen
+                                                        : Color(red: 0.3, green: 0.6, blue: 1.0))
                 }
 
-                HStack(spacing: 6) {
-                    Text(debt.date, style: .date)
-                        .font(.caption2)
-                        .foregroundStyle(.dimText)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(debt.personName)
+                        .font(.headline)
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
 
-                    if let due = debt.dueDate {
-                        Text("·").foregroundStyle(.dimText)
-                        Text("Due: \(due, style: .date)")
+                    if !debt.note.isEmpty {
+                        Text(debt.note)
+                            .font(.caption)
+                            .foregroundStyle(.glassText)
+                            .lineLimit(1)
+                    }
+
+                    HStack(spacing: 6) {
+                        Text(debt.date, style: .date)
                             .font(.caption2)
-                            .foregroundStyle(due < Date() && !debt.isSettled ? .neonRed : .dimText)
+                            .foregroundStyle(.dimText)
+
+                        if let due = debt.dueDate {
+                            Text("·").foregroundStyle(.dimText)
+                            Text("Due: \(due, style: .date)")
+                                .font(.caption2)
+                                .foregroundStyle(due < Date() && !debt.isSettled ? .neonRed : .dimText)
+                        }
+                    }
+                }
+
+                Spacer(minLength: 8)
+
+                VStack(alignment: .trailing, spacing: 3) {
+                    Text(debt.formattedAmount())
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(debt.isSettled ? .neonGreen
+                                                        : Color(red: 0.3, green: 0.6, blue: 1.0))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+
+                    Text(debt.isSettled ? "Settled" : "Outstanding")
+                        .font(.caption2)
+                        .foregroundStyle(debt.isSettled ? .neonGreen.opacity(0.7) : .dimText)
+                }
+                
+                // Expand chevron if there are items
+                if let items = debt.items, !items.isEmpty {
+                    Image(systemName: "chevron.down")
+                        .rotationEffect(.degrees(isExpanded ? 180 : 0))
+                        .foregroundStyle(.dimText)
+                        .font(.caption)
+                        .padding(.leading, 4)
+                }
+            }
+            .contentShape(Rectangle()) // Makes the whole area tappable for expanding
+            .onTapGesture {
+                if let items = debt.items, !items.isEmpty {
+                    withAnimation(.spring(duration: 0.3)) {
+                        isExpanded.toggle()
                     }
                 }
             }
-
-            Spacer(minLength: 8)
-
-            VStack(alignment: .trailing, spacing: 3) {
-                Text(debt.formattedAmount())
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(debt.isSettled ? .neonGreen
-                                                    : Color(red: 0.3, green: 0.6, blue: 1.0))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-
-                Text(debt.isSettled ? "Settled" : "Outstanding")
-                    .font(.caption2)
-                    .foregroundStyle(debt.isSettled ? .neonGreen.opacity(0.7) : .dimText)
+            
+            // Expandable Items List
+            if isExpanded, let items = debt.items, !items.isEmpty {
+                VStack(spacing: 8) {
+                    Divider()
+                        .background(Color.white.opacity(0.1))
+                        .padding(.vertical, 6)
+                    
+                    ForEach(items) { item in
+                        HStack {
+                            Text(item.name)
+                                .font(.caption)
+                                .foregroundStyle(.glassText)
+                            Spacer()
+                            Text("\(debt.currency.symbol) \(formatNumber(item.amount))")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.white)
+                        }
+                    }
+                }
+                .padding(.top, 4)
+                .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 13)
         .glassEffect(in: .rect(cornerRadius: 17))
+    }
+    
+    private func formatNumber(_ value: Double) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.maximumFractionDigits = 2
+        formatter.minimumFractionDigits = 0
+        return formatter.string(from: NSNumber(value: value)) ?? "\(value)"
     }
 }

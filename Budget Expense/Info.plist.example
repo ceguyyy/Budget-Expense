@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- 
+    ⚠️ IMPORTANT: Add this to your existing Info.plist file
+    
+    This permission is REQUIRED for Face ID to work.
+    Without it, the app will crash when attempting to use biometric authentication.
+    -->
+    
+    <key>NSFaceIDUsageDescription</key>
+    <string>We need Face ID to securely unlock your Budget Expense app</string>
+    
+    <!-- 
+    You can customize the message above to better suit your app.
+    Examples:
+    - "Unlock Budget Expense quickly and securely with Face ID"
+    - "Use Face ID for secure access to your financial data"
+    - "Authenticate with Face ID to access your budget information"
+    -->
+    
+</dict>
+</plist>

@@ -9,9 +9,14 @@ import SwiftUI
 
 @main
 struct Budget_ExpenseApp: App {
+    @State private var authManager = AuthenticationManager()
+    @State private var categoryManager = CategoryManager()
+    
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            AuthenticationWrapper()
+                .environment(\.authenticationManager, authManager)
+                .environment(\.categoryManager, categoryManager)
                 .ignoresSafeArea()
         }
     }

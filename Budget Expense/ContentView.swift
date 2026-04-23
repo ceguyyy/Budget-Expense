@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ContentView: View {
     @State private var store = AppStore()
+    @Environment(\.authenticationManager) private var authManager
 
     var body: some View {
         TabView {
@@ -34,12 +35,14 @@ struct ContentView: View {
                 }
             }
             
+            
             Tab("Settings", systemImage: "gear"){
                 NavigationStack{
                     SettingView()
                         .navigationTitle("Settings")
                 }
             }
+            
         }
         .environment(store)
         .preferredColorScheme(.dark)
@@ -57,4 +60,5 @@ struct ContentView: View {
 
 #Preview {
     ContentView()
+        .environment(\.authenticationManager, AuthenticationManager())
 }

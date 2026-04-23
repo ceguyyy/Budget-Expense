@@ -6,7 +6,18 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		F82E08632F9A260400AC788C /* PINSetupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F82E085F2F9A260400AC788C /* PINSetupView.swift */; };
+		F82E08642F9A260400AC788C /* AuthenticationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = F82E08602F9A260400AC788C /* AuthenticationManager.swift */; };
+		F82E08652F9A260400AC788C /* project.pbxproj in Sources */ = {isa = PBXBuildFile; fileRef = F82E08612F9A260400AC788C /* project.pbxproj */; };
+		F82E08662F9A260400AC788C /* PINEntryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F82E08622F9A260400AC788C /* PINEntryView.swift */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
+		F82E085F2F9A260400AC788C /* PINSetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PINSetupView.swift; path = "Budget Expense.xcodeproj/PINSetupView.swift"; sourceTree = "<group>"; };
+		F82E08602F9A260400AC788C /* AuthenticationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AuthenticationManager.swift; path = "Budget Expense.xcodeproj/AuthenticationManager.swift"; sourceTree = "<group>"; };
+		F82E08612F9A260400AC788C /* project.pbxproj */ = {isa = PBXFileReference; lastKnownFileType = text.pbxproject; name = project.pbxproj; path = "Budget Expense.xcodeproj/project.pbxproj"; sourceTree = "<group>"; };
+		F82E08622F9A260400AC788C /* PINEntryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PINEntryView.swift; path = "Budget Expense.xcodeproj/PINEntryView.swift"; sourceTree = "<group>"; };
 		F86358022F9955DC00987382 /* Budget Expense.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Budget Expense.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -32,6 +43,10 @@
 		F86357F92F9955DC00987382 = {
 			isa = PBXGroup;
 			children = (
+				F82E08602F9A260400AC788C /* AuthenticationManager.swift */,
+				F82E08622F9A260400AC788C /* PINEntryView.swift */,
+				F82E085F2F9A260400AC788C /* PINSetupView.swift */,
+				F82E08612F9A260400AC788C /* project.pbxproj */,
 				F86358042F9955DC00987382 /* Budget Expense */,
 				F86358032F9955DC00987382 /* Products */,
 			);
@@ -119,6 +134,10 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				F82E08632F9A260400AC788C /* PINSetupView.swift in Sources */,
+				F82E08642F9A260400AC788C /* AuthenticationManager.swift in Sources */,
+				F82E08652F9A260400AC788C /* project.pbxproj in Sources */,
+				F82E08662F9A260400AC788C /* PINEntryView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -250,6 +269,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
@@ -261,10 +281,15 @@
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "Budget-Expense-Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = DuitGwWoi;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.finance";
+				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
+				INFOPLIST_KEY_NSFaceIDUsageDescription = "We need Face ID to securely unlock your Budget Expense app";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_UIRequiresFullScreen = YES;
 				INFOPLIST_KEY_UIStatusBarHidden = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				INFOPLIST_KEY_UISupportsDocumentBrowser = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -290,6 +315,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
@@ -301,10 +327,15 @@
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "Budget-Expense-Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = DuitGwWoi;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.finance";
+				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
+				INFOPLIST_KEY_NSFaceIDUsageDescription = "We need Face ID to securely unlock your Budget Expense app";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_UIRequiresFullScreen = YES;
 				INFOPLIST_KEY_UIStatusBarHidden = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				INFOPLIST_KEY_UISupportsDocumentBrowser = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",

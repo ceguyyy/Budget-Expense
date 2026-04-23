@@ -21,7 +21,7 @@ struct Wallet: Identifiable, Codable {
     var balance: Double
     var currency: Currency
     var isPositive: Bool
-    var imageData: Data? // Added this property to resolve the missing member error
+    var imageData: Data?
 
     var signedBalance: Double { isPositive ? balance : -balance }
     var initials: String { String(name.prefix(2)).uppercased() }
@@ -120,6 +120,12 @@ struct Installment: Identifiable, Codable {
 
 // MARK: - Debt (Piutang)
 
+struct DebtItem: Identifiable, Codable, Equatable {
+    var id = UUID()
+    var name: String
+    var amount: Double
+}
+
 struct Debt: Identifiable, Codable {
     var id: UUID = UUID()
     var personName: String
@@ -129,6 +135,7 @@ struct Debt: Identifiable, Codable {
     var date: Date
     var dueDate: Date?
     var isSettled: Bool = false
+    var items: [DebtItem]? = nil // Optional field to store receipt items
 
     var initials: String { String(personName.prefix(2)).uppercased() }
     func formattedAmount() -> String { formatCurrency(amount, currency: currency) }

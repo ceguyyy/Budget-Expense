@@ -4,4 +4,13 @@
    <FileRef
       location = "self:">
    </FileRef>
+   <FileRef
+      location = "group:AuthenticationManager.swift">
+   </FileRef>
+   <FileRef
+      location = "group:PINSetupView.swift">
+   </FileRef>
+   <FileRef
+      location = "group:PINEntryView.swift">
+   </FileRef>
 </Workspace>

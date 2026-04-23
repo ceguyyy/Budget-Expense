@@ -1,39 +1,38 @@
 //
-//  AddTransactionView.swift
+//  AddCCTransactionView.swift
 //  Budget Expense
 //
 
 import SwiftUI
 
-struct AddTransactionView: View {
-    let wallet: Wallet
-    var editTarget: WalletTransaction? = nil
+struct AddCreditCardTransactionView: View {
+    let card: CreditCard
+    var editTarget: CCTransaction? = nil
     
     @Environment(AppStore.self) private var store
     @Environment(\.categoryManager) private var categoryManager
     @Environment(\.dismiss) private var dismiss
-
-    @State private var txType     = TransactionType.outflow
+    
     @State private var amountText = ""
     @State private var category   = ""
-    @State private var note       = ""
+    @State private var description = ""
     @State private var date       = Date()
-
+    
     private var categories: [String] {
-        categoryManager.categoryNames(for: txType)
+        // Credit card transactions are always outflow (expenses)
+        categoryManager.categoryNames(for: .outflow)
     }
-
+    
     private var canSave: Bool {
         Double(amountText.replacingOccurrences(of: ",", with: ".")) ?? 0 > 0
     }
-
+    
     var body: some View {
         NavigationStack {
             ZStack {
                 Color.appBg.ignoresSafeArea()
                 ScrollView {
                     VStack(spacing: 22) {
-                        typeSelector
                         amountField
                         categoryField
                         noteField
@@ -57,22 +56,13 @@ struct AddTransactionView: View {
             }
         }
     }
-
-    // MARK: Type Selector
-
-    private var typeSelector: some View {
-        HStack(spacing: 10) {
-            txTypeBtn(.inflow,  "Inflow",  "arrow.down.circle.fill", .neonGreen)
-            txTypeBtn(.outflow, "Outflow", "arrow.up.circle.fill",   .neonRed)
-        }
-    }
-
-    // MARK: Amount
-
+    
+    // MARK: - Amount
+    
     private var amountField: some View {
         field("AMOUNT", "banknote") {
             HStack(spacing: 10) {
-                Text(wallet.currency.symbol).font(.headline).foregroundStyle(.glassText).frame(minWidth: 24)
+                Text("Rp").font(.headline).foregroundStyle(.glassText).frame(minWidth: 24)
                 TextField("0", text: $amountText)
                     #if os(iOS)
                     .keyboardType(.decimalPad)
@@ -82,9 +72,9 @@ struct AddTransactionView: View {
             .padding(14).glassEffect(in: .rect(cornerRadius: 14))
         }
     }
-
-    // MARK: Category
-
+    
+    // MARK: - Category
+    
     private var categoryField: some View {
         field("CATEGORY", "tag") {
             Menu {
@@ -105,19 +95,19 @@ struct AddTransactionView: View {
             .buttonStyle(.plain)
         }
     }
-
-    // MARK: Note
-
+    
+    // MARK: - Description
+    
     private var noteField: some View {
-        field("NOTE (optional)", "note.text") {
-            TextField("e.g. Lunch, groceries…", text: $note)
+        field("DESCRIPTION (optional)", "note.text") {
+            TextField("e.g. Lunch, groceries…", text: $description)
                 .textFieldStyle(.plain).font(.body).foregroundStyle(.white)
                 .padding(14).glassEffect(in: .rect(cornerRadius: 14))
         }
     }
-
-    // MARK: Date
-
+    
+    // MARK: - Date
+    
     private var datePicker: some View {
         field("DATE", "calendar") {
             DatePicker("", selection: $date, displayedComponents: .date)
@@ -127,9 +117,9 @@ struct AddTransactionView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
-
-    // MARK: Save
-
+    
+    // MARK: - Save
+    
     private var saveBtn: some View {
         Button(action: save) {
             HStack(spacing: 8) {
@@ -141,9 +131,9 @@ struct AddTransactionView: View {
         .buttonStyle(.glassProminent)
         .disabled(!canSave).opacity(canSave ? 1 : 0.38)
     }
-
-    // MARK: Helpers
-
+    
+    // MARK: - Helpers
+    
     @ViewBuilder
     private func field<C: View>(_ title: String, _ icon: String, @ViewBuilder content: () -> C) -> some View {
         VStack(alignment: .leading, spacing: 9) {
@@ -152,43 +142,32 @@ struct AddTransactionView: View {
             content()
         }
     }
-
-    @ViewBuilder
-    private func txTypeBtn(_ type: TransactionType, _ label: String, _ icon: String, _ color: Color) -> some View {
-        Button { withAnimation(.spring(duration: 0.2)) { txType = type; category = "" } } label: {
-            HStack(spacing: 8) {
-                Image(systemName: icon).foregroundStyle(txType == type ? color : Color(white: 0.3))
-                Text(label).font(.subheadline.weight(txType == type ? .semibold : .regular))
-                    .foregroundStyle(txType == type ? .white : Color(white: 0.38))
-            }
-            .frame(maxWidth: .infinity).padding(.vertical, 14)
-            .glassEffect(txType == type ? .regular.tint(color) : .regular, in: .rect(cornerRadius: 14))
-        }
-        .buttonStyle(.plain)
-    }
-
+    
     private func prefill() {
         guard let tx = editTarget else { return }
-        txType = tx.type
         amountText = tx.amount.truncatingRemainder(dividingBy: 1) == 0 ? String(format: "%.0f", tx.amount) : "\(tx.amount)"
         category = tx.category
-        note = tx.note
+        description = tx.description
         date = tx.date
     }
-
+    
     private func save() {
         let amount = Double(amountText.replacingOccurrences(of: ",", with: ".")) ?? 0
         guard amount > 0 else { return }
-        let tx = WalletTransaction(
+        let tx = CCTransaction(
             id: editTarget?.id ?? UUID(),
-            walletId: wallet.id, amount: amount, type: txType,
-            category: category, note: note, date: date
+            description: description,
+            amount: amount,
+            category: category,
+            date: date
         )
         
         if let oldTx = editTarget {
-            store.updateTransaction(oldTx: oldTx, newTx: tx)
+            // Delete old transaction and add updated one
+            store.deleteCCTransaction(oldTx.id, from: card.id)
+            store.addCCTransaction(tx, to: card.id)
         } else {
-            store.addTransaction(tx)
+            store.addCCTransaction(tx, to: card.id)
         }
         dismiss()
     }
