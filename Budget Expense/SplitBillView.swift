@@ -93,6 +93,9 @@ struct SplitBillView: View {
                     VStack(spacing: 22) {
                         participantsSection
                         Divider()
+                            .background(Color.white.opacity(0.1))
+                            .padding(.horizontal, 16)
+                            
                         descriptionField
                         categoryField
                         payerField
@@ -104,8 +107,6 @@ struct SplitBillView: View {
                         } else {
                             totalAmountField
                         }
-                        
-                        
                         
                         if !participants.isEmpty {
                             allocationSummary
@@ -411,7 +412,6 @@ struct SplitBillView: View {
                     .glassEffect(in: .rect(cornerRadius: 14))
             } else {
                 VStack(spacing: 8) {
-                    // Passed down as bindings so inline editing works
                     ForEach($participants) { $participant in
                         ParticipantRow(
                             participant: $participant,
@@ -519,30 +519,26 @@ struct SplitBillView: View {
         case .percentage:
             guard totalAmount > 0 else { return }
             for i in participants.indices {
-                // Calculates amount directly from user's custom percentage input
                 participants[i].amount = (participants[i].percentage / 100.0) * totalAmount
             }
             
         case .custom:
-            // Custom requires manual editing from inside the ParticipantRow, don't auto-overwrite.
             break
             
         case .itemized:
             let subtotal = items.reduce(0) { $0 + ($1.price * Double($1.qty)) }
             let totalExtra = taxAmount + serviceCharge
             
-            // 1. Reset all amounts
             for i in participants.indices {
                 participants[i].amount = 0
             }
             
             guard subtotal > 0 else { return }
             
-            // 2. Add item shares
             for item in items {
                 let itemTotal = item.price * Double(item.qty)
                 let assignedCount = Double(item.assigned.count)
-                guard assignedCount > 0 else { continue } // Invalid unassigned item
+                guard assignedCount > 0 else { continue }
                 
                 let shareAmount = itemTotal / assignedCount
                 
@@ -553,7 +549,6 @@ struct SplitBillView: View {
                 }
             }
             
-            // 3. Pro-rate Extra Charges based on share of subtotal
             if totalExtra > 0 {
                 for i in participants.indices {
                     let userSubtotal = participants[i].amount
@@ -575,8 +570,8 @@ struct SplitBillView: View {
         let subtotal = items.reduce(0) { $0 + ($1.price * Double($1.qty)) }
         let totalExtra = taxAmount + serviceCharge
         
+        // 1. Generate Debt Entries
         for participant in participants {
-            // Optional: Skip creating a debt if the participant's name matches the payer's name
             if participant.name.caseInsensitiveCompare(formattedPayer) == .orderedSame { continue }
             
             var debtItems: [DebtItem] = []
@@ -612,6 +607,22 @@ struct SplitBillView: View {
             )
             store.addDebt(debt)
         }
+        
+        // 2. Generate Split Bill History Record
+        let recordItems = items.map { SplitItemRecord(name: $0.name, price: $0.price, qty: $0.qty) }
+        let recordParticipants = participants.map { SplitParticipantRecord(name: $0.name, amount: $0.amount, percentage: $0.percentage) }
+        
+        let historyRecord = SplitBillRecord(
+            billName: desc,
+            payerName: formattedPayer,
+            totalAmount: totalAmount,
+            currency: currency,
+            date: date,
+            items: recordItems,
+            participants: recordParticipants
+        )
+        // ✅ Saving History directly into the global Store exactly here:
+        store.addSplitBill(historyRecord)
         
         dismiss()
     }
@@ -684,7 +695,6 @@ struct ItemRow: View {
                 }
             }
             
-            // People tags
             let assignedNames = participants.filter { item.assigned.contains($0.id) }.map { $0.name }
             if assignedNames.isEmpty {
                 Text("⚠️ Unassigned")
@@ -711,9 +721,7 @@ struct ItemRow: View {
     }
 }
 
-// MARK: - Updated Participant Row (Inline Editing)
-
-import SwiftUI
+// MARK: - Participant Row (Inline Editing)
 
 struct ParticipantRow: View {
     @Binding var participant: SplitParticipant
@@ -741,7 +749,6 @@ struct ParticipantRow: View {
         )
         .shadow(color: Color.black.opacity(0.2), radius: 8, x: 0, y: 4)
         
-        // MARK: - Sync
         .onAppear {
             percentageText = formatNumber(participant.percentage)
             amountText = formatNumber(participant.amount)
@@ -754,10 +761,8 @@ struct ParticipantRow: View {
         }
     }
     
-    // MARK: - Header (Avatar + Name + Delete)
     private var headerSection: some View {
         HStack(spacing: 12) {
-            // Avatar
             ZStack {
                 Circle()
                     .fill(Color.neonGreen.opacity(0.15))
@@ -774,14 +779,12 @@ struct ParticipantRow: View {
                     .glassEffect()
             }
             
-            // Name
             Text(participant.name)
                 .font(.body.weight(.semibold))
                 .foregroundStyle(.white)
             
             Spacer()
             
-            // Delete Button
             Button(action: onDelete) {
                 Image(systemName: "trash")
                     .font(.caption.weight(.bold))
@@ -795,12 +798,11 @@ struct ParticipantRow: View {
         .padding(.vertical, 12)
     }
     
-    // MARK: - Input/Amount Section
     private var inputSection: some View {
         HStack {
             Text("Share")
                 .font(.subheadline)
-                .foregroundStyle(.white.opacity(0.5)) // Adjust to your .glassText if preferred
+                .foregroundStyle(.white.opacity(0.5))
             
             Spacer()
             
@@ -814,14 +816,11 @@ struct ParticipantRow: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .background(Color.black.opacity(0.15)) // Subtle inset feel for the input area
+        .background(Color.black.opacity(0.15))
     }
-    
-    // MARK: - Specific Input Views
     
     private var percentageInputView: some View {
         HStack(spacing: 12) {
-            // Editable Percentage Box
             HStack(spacing: 2) {
                 TextField("0", text: $percentageText)
                     #if os(iOS)
@@ -841,14 +840,13 @@ struct ParticipantRow: View {
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
-            .background(Color.white.opacity(0.08)) // Clearly indicates it's editable
+            .background(Color.white.opacity(0.08))
             .cornerRadius(8)
             
             Text("=")
                 .font(.subheadline.weight(.bold))
                 .foregroundStyle(.white.opacity(0.3))
             
-            // Calculated Amount (Read-only)
             Text("\(currencySymbol) \(formatNumber(participant.amount))")
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.neonGreen)
@@ -875,7 +873,7 @@ struct ParticipantRow: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
-        .background(Color.white.opacity(0.08)) // Clearly indicates it's editable
+        .background(Color.white.opacity(0.08))
         .cornerRadius(8)
     }
     
@@ -885,11 +883,10 @@ struct ParticipantRow: View {
             .foregroundStyle(.neonGreen)
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
-            .background(Color.neonGreen.opacity(0.1)) // Highlights the final cut beautifully
+            .background(Color.neonGreen.opacity(0.1))
             .cornerRadius(8)
     }
     
-    // MARK: - Helpers
     private func formatNumber(_ value: Double) -> String {
         let f = NumberFormatter()
         f.numberStyle = .decimal
@@ -1018,7 +1015,7 @@ struct AddParticipantView: View {
         var amount: Double = 0
         switch splitMethod {
         case .equal, .itemized:
-            amount = 0 // Calculated dynamically in redistributeAmounts
+            amount = 0
         case .percentage:
             amount = (percentage / 100.0) * totalAmount
         case .custom:
@@ -1074,7 +1071,6 @@ struct AddReceiptItemView: View {
                                 .glassEffect(in: .rect(cornerRadius: 14))
                         }
                         
-                        // Item Details
                         VStack(alignment: .leading, spacing: 9) {
                             Label("ITEM DETAILS", systemImage: "cube.box")
                                 .font(.caption.weight(.semibold))
@@ -1109,7 +1105,6 @@ struct AddReceiptItemView: View {
                             .glassEffect(in: .rect(cornerRadius: 14))
                         }
                         
-                        // Assignees
                         VStack(alignment: .leading, spacing: 9) {
                             Label("WHO SHARES THIS ITEM?", systemImage: "person.2")
                                 .font(.caption.weight(.semibold))
@@ -1205,7 +1200,6 @@ struct AddReceiptItemView: View {
 
 // MARK: - iOS Contact Pickers
 #if os(iOS)
-// 1. Multiple Participant Picker
 struct ContactPickerView: UIViewControllerRepresentable {
     @Binding var participants: [SplitParticipant]
     @Environment(\.dismiss) private var dismiss
@@ -1218,30 +1212,18 @@ struct ContactPickerView: UIViewControllerRepresentable {
     
     func updateUIViewController(_ uiViewController: CNContactPickerViewController, context: Context) {}
     
-    func makeCoordinator() -> Coordinator {
-        Coordinator(self)
-    }
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
     
     class Coordinator: NSObject, CNContactPickerDelegate {
         let parent: ContactPickerView
-        
-        init(_ parent: ContactPickerView) {
-            self.parent = parent
-        }
-        
+        init(_ parent: ContactPickerView) { self.parent = parent }
         func contactPicker(_ picker: CNContactPickerViewController, didSelect contacts: [CNContact]) {
             DispatchQueue.main.async {
                 for contact in contacts {
-                    let given = contact.givenName
-                    let family = contact.familyName
-                    let org = contact.organizationName
-                    
-                    let name = [given, family].filter { !$0.isEmpty }.joined(separator: " ")
-                    let finalName = name.isEmpty ? (org.isEmpty ? "Unknown" : org) : name
-                    
+                    let name = [contact.givenName, contact.familyName].filter { !$0.isEmpty }.joined(separator: " ")
+                    let finalName = name.isEmpty ? (contact.organizationName.isEmpty ? "Unknown" : contact.organizationName) : name
                     if !self.parent.participants.contains(where: { $0.name == finalName }) {
-                        let newParticipant = SplitParticipant(name: finalName, amount: 0)
-                        self.parent.participants.append(newParticipant)
+                        self.parent.participants.append(SplitParticipant(name: finalName, amount: 0))
                     }
                 }
             }
@@ -1249,7 +1231,6 @@ struct ContactPickerView: UIViewControllerRepresentable {
     }
 }
 
-// 2. Single Contact Picker for "Who Paid"
 struct SingleContactPickerView: UIViewControllerRepresentable {
     @Binding var name: String
     @Environment(\.dismiss) private var dismiss
@@ -1262,25 +1243,15 @@ struct SingleContactPickerView: UIViewControllerRepresentable {
     
     func updateUIViewController(_ uiViewController: CNContactPickerViewController, context: Context) {}
     
-    func makeCoordinator() -> Coordinator {
-        Coordinator(self)
-    }
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
     
     class Coordinator: NSObject, CNContactPickerDelegate {
         let parent: SingleContactPickerView
-        
-        init(_ parent: SingleContactPickerView) {
-            self.parent = parent
-        }
-        
+        init(_ parent: SingleContactPickerView) { self.parent = parent }
         func contactPicker(_ picker: CNContactPickerViewController, didSelect contact: CNContact) {
             DispatchQueue.main.async {
-                let given = contact.givenName
-                let family = contact.familyName
-                let org = contact.organizationName
-                
-                let fullName = [given, family].filter { !$0.isEmpty }.joined(separator: " ")
-                self.parent.name = fullName.isEmpty ? (org.isEmpty ? "Unknown" : org) : fullName
+                let fullName = [contact.givenName, contact.familyName].filter { !$0.isEmpty }.joined(separator: " ")
+                self.parent.name = fullName.isEmpty ? (contact.organizationName.isEmpty ? "Unknown" : contact.organizationName) : fullName
             }
         }
     }

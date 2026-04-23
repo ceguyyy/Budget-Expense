@@ -8,7 +8,10 @@ import SwiftUI
 struct CreditCardDetailView: View {
     let cardId: UUID
     @Environment(AppStore.self) private var store
+    
     @State private var showAddTx     = false
+    @State private var editTxTarget: CCTransaction?
+    
     @State private var showAddInst   = false
     @State private var editInstTarget: Installment?
 
@@ -18,16 +21,29 @@ struct CreditCardDetailView: View {
         ZStack {
             Color.appBg.ignoresSafeArea()
             if let card {
-                ScrollView {
-                    VStack(spacing: 14) {
-                        cardHeroView(card)
-                        billingInfoCard(card)
-                        payNowButton(card)
-                        transactionsSection(card)
-                        installmentsSection(card)
-                    }
-                    .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 40)
+                List {
+                    cardHeroView(card)
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
+                        .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 14, trailing: 16))
+                        
+                    billingInfoCard(card)
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
+                        .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 14, trailing: 16))
+                        
+                    payNowButton(card)
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
+                        .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 20, trailing: 16))
+                        
+                    // Unrolled sections using @ViewBuilder directly into the List
+                    transactionsSection(card)
+                        
+                    installmentsSection(card)
                 }
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
             }
         }
         .navigationTitle(card?.name ?? "Credit Card")
@@ -46,7 +62,10 @@ struct CreditCardDetailView: View {
             }
         }
         .sheet(isPresented: $showAddTx) {
-            if let card { AddCCTransactionView(card: card).environment(store) }
+            if let card { AddCreditCardTransactionView(card: card).environment(store) }
+        }
+        .sheet(item: $editTxTarget) { tx in
+            if let card { AddCreditCardTransactionView(card: card, editTarget: tx).environment(store) }
         }
         .sheet(isPresented: $showAddInst) {
             if let card { AddInstallmentView(editTarget: nil, cardId: card.id).environment(store) }
@@ -65,7 +84,6 @@ struct CreditCardDetailView: View {
                                      startPoint: .topLeading, endPoint: .bottomTrailing))
                 .frame(height: 170)
 
-            // Card content
             VStack(alignment: .leading, spacing: 0) {
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
@@ -91,7 +109,6 @@ struct CreditCardDetailView: View {
                 }
                 .padding(.top, 6)
 
-                // Usage bar
                 GeometryReader { geo in
                     ZStack(alignment: .leading) {
                         RoundedRectangle(cornerRadius: 3).fill(.white.opacity(0.2)).frame(height: 5)
@@ -152,71 +169,107 @@ struct CreditCardDetailView: View {
         .opacity(store.totalDueThisMonth(for: card) > 0 ? 1 : 0.38)
     }
 
-    // MARK: Transactions Section
+    // MARK: Transactions Section (ViewBuilder allows rendering rows directly in List)
 
+    @ViewBuilder
     private func transactionsSection(_ card: CreditCard) -> some View {
         let txs = store.currentCycleTransactions(for: card).sorted { $0.date > $1.date }
-        return VStack(alignment: .leading, spacing: 10) {
-            sectionHeader("THIS CYCLE'S TRANSACTIONS", count: txs.count)
-            if txs.isEmpty {
-                emptySection("No transactions this cycle")
-            } else {
-                ForEach(txs) { tx in
-                    CCTransactionRow(tx: tx)
-                        // ✅ Tambahkan Context Menu
-                        .contextMenu {
-                            Button(role: .destructive) { store.deleteCCTransaction(tx.id, from: card.id) }
-                            label: { Label("Delete", systemImage: "trash") }
-                        }
-                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                            Button(role: .destructive) { store.deleteCCTransaction(tx.id, from: card.id) }
-                            label: { Label("Delete", systemImage: "trash") }
-                        }
-                }
+        
+        sectionHeader("THIS CYCLE'S TRANSACTIONS", count: txs.count)
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+            .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 10, trailing: 16))
+            
+        if txs.isEmpty {
+            emptySection("No transactions this cycle")
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+                .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 20, trailing: 16))
+        } else {
+            ForEach(txs) { tx in
+                CCTransactionRow(tx: tx)
+                    // Context Menu
+                    .contextMenu {
+                        Button { editTxTarget = tx }
+                        label: { Label("Edit", systemImage: "pencil") }
+                        
+                        Button(role: .destructive) { store.deleteCCTransaction(tx.id, from: card.id) }
+                        label: { Label("Delete", systemImage: "trash") }
+                    }
+                    // Swipe Actions
+                    .swipeActions(edge: .leading) {
+                        Button { editTxTarget = tx }
+                        label: { Label("Edit", systemImage: "pencil") }
+                        .tint(.blue)
+                    }
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        Button(role: .destructive) { store.deleteCCTransaction(tx.id, from: card.id) }
+                        label: { Label("Delete", systemImage: "trash") }
+                    }
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+                    .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 10, trailing: 16))
             }
         }
     }
 
     // MARK: Installments Section
 
+    @ViewBuilder
     private func installmentsSection(_ card: CreditCard) -> some View {
         let active = card.installments.filter { !$0.isCompleted }
         let done   = card.installments.filter {  $0.isCompleted }
-        return VStack(alignment: .leading, spacing: 10) {
-            sectionHeader("ACTIVE INSTALLMENTS", count: active.count)
-            if active.isEmpty {
-                emptySection("No active installments")
-            } else {
-                ForEach(active) { inst in
+        
+        sectionHeader("ACTIVE INSTALLMENTS", count: active.count)
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+            .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16))
+            
+        if active.isEmpty {
+            emptySection("No active installments")
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+                .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 20, trailing: 16))
+        } else {
+            ForEach(active) { inst in
+                InstallmentRow(inst: inst)
+                    // Context Menu
+                    .contextMenu {
+                        Button { editInstTarget = inst }
+                        label: { Label("Edit", systemImage: "pencil") }
+                        
+                        Button(role: .destructive) { store.deleteInstallment(inst.id, from: card.id) }
+                        label: { Label("Delete", systemImage: "trash") }
+                    }
+                    .swipeActions(edge: .leading) {
+                        Button { editInstTarget = inst }
+                        label: { Label("Edit", systemImage: "pencil") }
+                        .tint(.blue)
+                    }
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        Button(role: .destructive) { store.deleteInstallment(inst.id, from: card.id) }
+                        label: { Label("Delete", systemImage: "trash") }
+                    }
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+                    .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 10, trailing: 16))
+            }
+        }
+        
+        if !done.isEmpty {
+            DisclosureGroup {
+                ForEach(done) { inst in 
                     InstallmentRow(inst: inst)
-                        // ✅ Tambahkan Context Menu
-                        .contextMenu {
-                            Button { editInstTarget = inst }
-                            label: { Label("Edit", systemImage: "pencil") }
-                            
-                            Button(role: .destructive) { store.deleteInstallment(inst.id, from: card.id) }
-                            label: { Label("Delete", systemImage: "trash") }
-                        }
-                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                            Button(role: .destructive) { store.deleteInstallment(inst.id, from: card.id) }
-                            label: { Label("Delete", systemImage: "trash") }
-                        }
-                        .swipeActions(edge: .leading) {
-                            Button { editInstTarget = inst }
-                            label: { Label("Edit", systemImage: "pencil") }
-                            .tint(.blue)
-                        }
+                        .padding(.vertical, 4)
                 }
+            } label: {
+                Text("Completed (\(done.count))")
+                    .font(.caption).foregroundStyle(.dimText)
             }
-            if !done.isEmpty {
-                DisclosureGroup {
-                    ForEach(done) { inst in InstallmentRow(inst: inst) }
-                } label: {
-                    Text("Completed (\(done.count))")
-                        .font(.caption).foregroundStyle(.dimText)
-                }
-                .padding(14).glassEffect(in: .rect(cornerRadius: 14))
-            }
+            .padding(14).glassEffect(in: .rect(cornerRadius: 14))
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+            .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 40, trailing: 16))
         }
     }
 

@@ -8,7 +8,6 @@ import SwiftUI
 struct DebtListView: View {
     @Environment(AppStore.self) private var store
     @State private var showAdd    = false
-    @State private var editTarget: Debt?
     @State private var showSettled = false
 
     private var activeDebts:  [Debt] { store.debts.filter { !$0.isSettled }.sorted { $0.date > $1.date } }
@@ -31,9 +30,6 @@ struct DebtListView: View {
             .navigationTitle("Receivables")
             .sheet(isPresented: $showAdd) {
                 AddEditDebtView(editTarget: nil).environment(store)
-            }
-            .sheet(item: $editTarget) { d in
-                AddEditDebtView(editTarget: d).environment(store)
             }
         }
     }
@@ -68,73 +64,53 @@ struct DebtListView: View {
                 }
                 .padding(16)
                 .glassEffect(in: .rect(cornerRadius: 18))
-                .listRowBackground(Color.clear)
+              
                 .listRowSeparator(.hidden)
                 .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
 
                 ForEach(activeDebts) { debt in
-                    DebtRow(debt: debt)
-                        .listRowBackground(Color.clear)
-                        .listRowSeparator(.hidden)
-                        .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
-                        .contextMenu {
-                            Button {
-                                editTarget = debt
-                            } label: {
-                                Label("Edit", systemImage: "pencil")
-                            }
-                            Button {
-                                var updated = debt
-                                updated.isSettled = true
-                                store.updateDebt(updated)
-                            } label: {
-                                Label("Mark Settled", systemImage: "checkmark.circle")
-                            }
-                            Button(role: .destructive) {
-                                store.deleteDebt(debt.id)
-                            } label: {
-                                Label("Delete", systemImage: "trash")
-                            }
+                    // Navigate to detail view rather than expanding inline
+                    NavigationLink(destination: DebtDetailView(debt: debt).environment(store)) {
+                        DebtRow(debt: debt)
+                    }
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+                    .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        Button(role: .destructive) {
+                            store.deleteDebt(debt.id)
+                        } label: {
+                            Label("Delete", systemImage: "trash")
                         }
-                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                            Button(role: .destructive) {
-                                store.deleteDebt(debt.id)
-                            } label: {
-                                Label("Delete", systemImage: "trash")
-                            }
 
-                            Button {
-                                var updated = debt
-                                updated.isSettled = true
-                                store.updateDebt(updated)
-                            } label: {
-                                Label("Settled", systemImage: "checkmark.circle")
-                            }
-                            .tint(.neonGreen)
+                        Button {
+                            var updated = debt
+                            updated.isSettled = true
+                            store.updateDebt(updated)
+                        } label: {
+                            Label("Settled", systemImage: "checkmark.circle")
                         }
-                        .swipeActions(edge: .leading) {
-                            Button { editTarget = debt } label: {
-                                Label("Edit", systemImage: "pencil")
-                            }
-                            .tint(.blue)
-                        }
+                        .tint(.neonGreen)
+                    }
                 }
             }
 
             if !settledDebts.isEmpty {
                 DisclosureGroup(isExpanded: $showSettled) {
                     ForEach(settledDebts) { debt in
-                        DebtRow(debt: debt)
-                            .listRowBackground(Color.clear)
-                            .listRowSeparator(.hidden)
-                            .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
-                            .swipeActions {
-                                Button(role: .destructive) {
-                                    store.deleteDebt(debt.id)
-                                } label: {
-                                    Label("Delete", systemImage: "trash")
-                                }
+                        NavigationLink(destination: DebtDetailView(debt: debt).environment(store)) {
+                            DebtRow(debt: debt)
+                        }
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
+                        .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                        .swipeActions {
+                            Button(role: .destructive) {
+                                store.deleteDebt(debt.id)
+                            } label: {
+                                Label("Delete", systemImage: "trash")
                             }
+                        }
                     }
                 } label: {
                     Text("Settled (\(settledDebts.count))")
@@ -222,116 +198,215 @@ struct DebtListView: View {
 
 struct DebtRow: View {
     let debt: Debt
-    @State private var isExpanded = false
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 14) {
-                ZStack {
-                    Circle()
-                        .fill(debt.isSettled ? Color.neonGreen.opacity(0.1)
-                                             : Color(red: 0.3, green: 0.6, blue: 1.0).opacity(0.12))
-                        .frame(width: 46, height: 46)
+        HStack(spacing: 14) {
+            ZStack {
+                Circle()
+                    .fill(debt.isSettled ? Color.neonGreen.opacity(0.1)
+                                         : Color(red: 0.3, green: 0.6, blue: 1.0).opacity(0.12))
+                    .frame(width: 46, height: 46)
 
-                    Text(debt.initials)
-                        .font(.subheadline.bold())
-                        .foregroundStyle(debt.isSettled ? .neonGreen
-                                                        : Color(red: 0.3, green: 0.6, blue: 1.0))
-                }
+                Text(debt.initials)
+                    .font(.subheadline.bold())
+                    .foregroundStyle(debt.isSettled ? .neonGreen
+                                                    : Color(red: 0.3, green: 0.6, blue: 1.0))
+            }
 
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(debt.personName)
-                        .font(.headline)
-                        .foregroundStyle(.white)
-                        .lineLimit(1)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(debt.personName)
+                    .font(.headline)
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
 
-                    if !debt.note.isEmpty {
-                        Text(debt.note)
-                            .font(.caption)
-                            .foregroundStyle(.glassText)
-                            .lineLimit(1)
-                    }
-
-                    HStack(spacing: 6) {
-                        Text(debt.date, style: .date)
-                            .font(.caption2)
-                            .foregroundStyle(.dimText)
-
-                        if let due = debt.dueDate {
-                            Text("·").foregroundStyle(.dimText)
-                            Text("Due: \(due, style: .date)")
-                                .font(.caption2)
-                                .foregroundStyle(due < Date() && !debt.isSettled ? .neonRed : .dimText)
-                        }
-                    }
-                }
-
-                Spacer(minLength: 8)
-
-                VStack(alignment: .trailing, spacing: 3) {
-                    Text(debt.formattedAmount())
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(debt.isSettled ? .neonGreen
-                                                        : Color(red: 0.3, green: 0.6, blue: 1.0))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.7)
-
-                    Text(debt.isSettled ? "Settled" : "Outstanding")
-                        .font(.caption2)
-                        .foregroundStyle(debt.isSettled ? .neonGreen.opacity(0.7) : .dimText)
-                }
-                
-                // Expand chevron if there are items
-                if let items = debt.items, !items.isEmpty {
-                    Image(systemName: "chevron.down")
-                        .rotationEffect(.degrees(isExpanded ? 180 : 0))
-                        .foregroundStyle(.dimText)
+                if !debt.note.isEmpty {
+                    Text(debt.note)
                         .font(.caption)
-                        .padding(.leading, 4)
+                        .foregroundStyle(.glassText)
+                        .lineLimit(1)
+                }
+
+                HStack(spacing: 6) {
+                    Text(debt.date, style: .date)
+                        .font(.caption2)
+                        .foregroundStyle(.dimText)
+
+                    if let due = debt.dueDate {
+                        Text("·").foregroundStyle(.dimText)
+                        Text("Due: \(due, style: .date)")
+                            .font(.caption2)
+                            .foregroundStyle(due < Date() && !debt.isSettled ? .neonRed : .dimText)
+                    }
                 }
             }
-            .contentShape(Rectangle()) // Makes the whole area tappable for expanding
-            .onTapGesture {
-                if let items = debt.items, !items.isEmpty {
-                    withAnimation(.spring(duration: 0.3)) {
-                        isExpanded.toggle()
-                    }
-                }
+
+            Spacer(minLength: 8)
+
+            VStack(alignment: .trailing, spacing: 3) {
+                Text(debt.formattedAmount())
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(debt.isSettled ? .neonGreen
+                                                    : Color(red: 0.3, green: 0.6, blue: 1.0))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+
+                Text(debt.isSettled ? "Settled" : "Outstanding")
+                    .font(.caption2)
+                    .foregroundStyle(debt.isSettled ? .neonGreen.opacity(0.7) : .dimText)
             }
             
-            // Expandable Items List
-            if isExpanded, let items = debt.items, !items.isEmpty {
-                VStack(spacing: 8) {
-                    Divider()
-                        .background(Color.white.opacity(0.1))
-                        .padding(.vertical, 6)
-                    
-                    ForEach(items) { item in
-                        HStack {
-                            Text(item.name)
-                                .font(.caption)
-                                .foregroundStyle(.glassText)
-                            Spacer()
-                            Text("\(debt.currency.symbol) \(formatNumber(item.amount))")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(.white)
-                        }
-                    }
-                }
-                .padding(.top, 4)
-                .transition(.opacity.combined(with: .move(edge: .top)))
-            }
+            // Remove chevron logic here since NavigationLink adds its own chevron
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 13)
         .glassEffect(in: .rect(cornerRadius: 17))
+    }
+}
+
+// MARK: - Detail View (Read-Only)
+
+struct DebtDetailView: View {
+    @Environment(AppStore.self) private var store
+    @Environment(\.dismiss) private var dismiss
+    @State private var showEdit = false
+    
+    let debt: Debt
+    
+    var body: some View {
+        ZStack {
+            Color.appBg.ignoresSafeArea()
+            
+            ScrollView {
+                VStack(spacing: 20) {
+                    // Main Status Header
+                    VStack(spacing: 12) {
+                        ZStack {
+                            Circle()
+                                .fill(debt.isSettled ? Color.neonGreen.opacity(0.15)
+                                                     : Color(red: 0.3, green: 0.6, blue: 1.0).opacity(0.15))
+                                .frame(width: 72, height: 72)
+                            
+                            Text(debt.initials)
+                                .font(.title.bold())
+                                .foregroundStyle(debt.isSettled ? .neonGreen
+                                                                : Color(red: 0.3, green: 0.6, blue: 1.0))
+                        }
+                        
+                        Text(debt.personName)
+                            .font(.title2.weight(.bold))
+                            .foregroundStyle(.white)
+                        
+                        Text(debt.formattedAmount())
+                            .font(.largeTitle.weight(.bold))
+                            .foregroundStyle(debt.isSettled ? .neonGreen : .white)
+                        
+                        HStack(spacing: 6) {
+                            Circle()
+                                .fill(debt.isSettled ? Color.neonGreen : Color.neonRed)
+                                .frame(width: 8, height: 8)
+                            Text(debt.isSettled ? "Settled" : "Outstanding")
+                                .font(.subheadline.weight(.medium))
+                                .foregroundStyle(debt.isSettled ? .neonGreen : .neonRed)
+                        }
+                        .padding(.vertical, 6)
+                        .padding(.horizontal, 12)
+                        .background(Color.white.opacity(0.08))
+                        .clipShape(Capsule())
+                    }
+                    .padding()
+                    .frame(maxWidth: .infinity)
+                    .glassEffect(in: .rect(cornerRadius: 20))
+                    
+                    // Info Section
+                    VStack(spacing: 0) {
+                        detailRow(label: "Date", value: debt.date.formatted(date: .long, time: .omitted))
+                        Divider().background(Color.white.opacity(0.1)).padding(.leading, 16)
+                        if let due = debt.dueDate {
+                            detailRow(label: "Due Date", value: due.formatted(date: .long, time: .omitted))
+                                .foregroundStyle(due < Date() && !debt.isSettled ? .neonRed : .white)
+                            Divider().background(Color.white.opacity(0.1)).padding(.leading, 16)
+                        }
+                        detailRow(label: "Note", value: debt.note.isEmpty ? "None" : debt.note)
+                    }
+                    .glassEffect(in: .rect(cornerRadius: 16))
+                    
+                    // Specific Split Bill Items Breakdown (If Any)
+                    if let items = debt.items, !items.isEmpty {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Allocated Items")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.glassText)
+                                .padding(.leading, 4)
+                            
+                            VStack(spacing: 0) {
+                                ForEach(items) { item in
+                                    HStack {
+                                        Text(item.name)
+                                            .foregroundStyle(.white)
+                                        Spacer()
+                                        Text("\(debt.currency.symbol) \(formatNumber(item.amount))")
+                                            .foregroundStyle(.white)
+                                            .fontWeight(.medium)
+                                    }
+                                    .padding(.vertical, 12)
+                                    .padding(.horizontal, 16)
+                                    
+                                    if item.id != items.last?.id {
+                                        Divider().background(Color.white.opacity(0.1)).padding(.leading, 16)
+                                    }
+                                }
+                            }
+                            .glassEffect(in: .rect(cornerRadius: 16))
+                        }
+                    }
+                }
+                .padding()
+            }
+        }
+        .navigationTitle("Details")
+        #if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
+        #endif
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("Edit") {
+                    showEdit = true
+                }
+                .tint(Color(red: 0.3, green: 0.6, blue: 1.0))
+            }
+        }
+        .sheet(isPresented: $showEdit) {
+            AddEditDebtView(editTarget: debt)
+                .environment(store)
+        }
+    }
+    
+    private func detailRow(label: String, value: String) -> some View {
+        HStack(alignment: .top) {
+            Text(label)
+                .foregroundStyle(.glassText)
+                .frame(width: 80, alignment: .leading)
+            Spacer()
+            Text(value)
+                .multilineTextAlignment(.trailing)
+        }
+        .font(.subheadline)
+        .padding(.vertical, 14)
+        .padding(.horizontal, 16)
     }
     
     private func formatNumber(_ value: Double) -> String {
         let formatter = NumberFormatter()
         formatter.numberStyle = .decimal
         formatter.maximumFractionDigits = 2
-        formatter.minimumFractionDigits = 0
         return formatter.string(from: NSNumber(value: value)) ?? "\(value)"
     }
 }
+
+
+#Preview {
+    DebtListView()
+        .environment(AppStore())
+        .environment(\.categoryManager, CategoryManager())
+}
+

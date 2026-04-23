@@ -32,7 +32,6 @@ struct WalletDetailView: View {
                 .ignoresSafeArea()
             
             if let wallet {
-                // ✅ Changed from ScrollView to List so swipeActions will work
                 List {
                     walletHeroCard(wallet)
                         .listRowBackground(Color.clear)
@@ -55,7 +54,20 @@ struct WalletDetailView: View {
                                 .listRowBackground(Color.clear)
                                 .listRowSeparator(.hidden)
                                 .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 6, trailing: 16))
-                                // ✅ Swipe to Edit
+                                // Context menu for long press editing
+                                .contextMenu {
+                                    Button {
+                                        activeSheet = .edit(tx)
+                                    } label: {
+                                        Label("Edit", systemImage: "pencil")
+                                    }
+                                    Button(role: .destructive) {
+                                        store.deleteTransaction(tx)
+                                    } label: {
+                                        Label("Delete", systemImage: "trash")
+                                    }
+                                }
+                                // Swipe to Edit
                                 .swipeActions(edge: .leading) {
                                     Button {
                                         activeSheet = .edit(tx)
@@ -64,7 +76,7 @@ struct WalletDetailView: View {
                                     }
                                     .tint(.blue)
                                 }
-                                // ✅ Swipe to Delete
+                                // Swipe to Delete
                                 .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                     Button(role: .destructive) {
                                         store.deleteTransaction(tx)
@@ -85,7 +97,7 @@ struct WalletDetailView: View {
                 .scrollContentBackground(.hidden)
             }
             
-            // ✅ FAB moved out of safeAreaInset into ZStack for better 1-click response
+            // FAB
             Button { activeSheet = .add } label: {
                 Image(systemName: "plus")
                     .font(.title2.bold()).frame(width: 58, height: 58)

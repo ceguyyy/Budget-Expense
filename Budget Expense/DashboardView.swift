@@ -5,6 +5,7 @@
 
 import SwiftUI
 import Charts
+import UIKit
 
 // MARK: - Chart Range Enum
 enum ChartRange: String, CaseIterable {
@@ -18,14 +19,44 @@ struct DashboardExchangeRateResponse: Codable {
     let conversion_rates: [String: Double]?
 }
 
+// MARK: - Helper Types for Combined Transactions
+enum AnyTransaction: Identifiable {
+    case wallet(WalletTransaction)
+    case cc(CCTransaction, cardId: UUID)
+    
+    var id: UUID {
+        switch self {
+        case .wallet(let tx): return tx.id
+        case .cc(let tx, _): return tx.id
+        }
+    }
+    var date: Date {
+        switch self {
+        case .wallet(let tx): return tx.date
+        case .cc(let tx, _): return tx.date
+        }
+    }
+}
+
+struct CCEditWrapper: Identifiable {
+    let id = UUID()
+    let cardId: UUID
+    let tx: CCTransaction
+}
+
 // MARK: - Dashboard
 
 struct DashboardView: View {
     @Environment(AppStore.self) private var store
+    @Environment(\.appleSignInManager) private var signInManager
     
-    // ✅ State for universal add sheet & CC edit
+    // ✅ State for universal add sheet & edits
     @State private var showUniversalAdd = false
-    @State private var editCCTarget: CreditCard?
+    @State private var editCCTarget: CreditCard? // For editing the card itself
+    
+    // ✅ State for editing transactions directly from dashboard
+    @State private var editWalletTx: WalletTransaction?
+    @State private var editCCTxWrapper: CCEditWrapper?
     
     // ✅ State for FAB Menu Options
     @State private var showSplitBill = false
@@ -43,32 +74,22 @@ struct DashboardView: View {
     var body: some View {
         NavigationStack {
             ZStack(alignment: .bottomTrailing) {
-                // Background full screen
                 Color.appBg
                     .ignoresSafeArea()
 
                 ScrollView(showsIndicators: false) {
                     VStack(spacing: 24) {
                         headerBar
-                        
-                        // Swipeable Cards
                         swipeableCards
-                        
-                        // Metrics Grid (Liability, CC Bill, Receivables, Installment)
                         metricsGrid
-                        
-                        // Working Analytics Section with Filters
+                        featureCardsSection
                         analyticsSection
-                        
                         recentTransactionsSection
-                        
-                        
                     }
                     .padding(.top, 8)
-                    .padding(.bottom, 120) // Extra padding so FAB doesn't block content
+                    .padding(.bottom, 120) 
                 }
                 
-                // FAB Menu with expandable options
                 HStack {
                     Spacer()
                     FABMenuView(
@@ -81,6 +102,8 @@ struct DashboardView: View {
                 }
             }
             .navigationBarHidden(true)
+            
+            // Adding/Editing Sheets
             .sheet(isPresented: $showUniversalAdd) {
                 UniversalAddTransactionView()
                     .environment(store)
@@ -93,33 +116,42 @@ struct DashboardView: View {
                 AddEditCreditCardView(editTarget: card)
                     .environment(store)
             }
-            // ✅ Fetch Exchange Rate when Dashboard appears
+            
+            // Edit Wallet Transaction Sheet
+            .sheet(item: $editWalletTx) { tx in
+                if let w = store.wallets.first(where: { $0.id == tx.walletId }) {
+                    AddTransactionView(wallet: w, editTarget: tx)
+                        .environment(store)
+                }
+            }
+            
+            // Edit CC Transaction Sheet
+            .sheet(item: $editCCTxWrapper) { wrapper in
+                if let c = store.creditCards.first(where: { $0.id == wrapper.cardId }) {
+                    AddCreditCardTransactionView(card: c, editTarget: wrapper.tx)
+                        .environment(store)
+                }
+            }
+            
             .task {
                 await fetchExchangeRateIfNeeded()
             }
         }
     }
 
-    // MARK: - Fetch Exchange Rate
-    
     private func fetchExchangeRateIfNeeded() async {
         let oneWeekInSeconds: TimeInterval = 7 * 24 * 60 * 60
         let now = Date().timeIntervalSince1970
-        
-        // Only fetch if 1 week has passed since the last successful fetch
         guard now - lastFetchDate > oneWeekInSeconds else { return }
-        
         guard let url = URL(string: "https://v6.exchangerate-api.com/v6/1184a7843bf2f5403c4d651e/latest/USD") else { return }
         
         do {
             let (data, _) = try await URLSession.shared.data(from: url)
             let response = try JSONDecoder().decode(DashboardExchangeRateResponse.self, from: data)
-            
             if let rates = response.conversion_rates, let idrRate = rates["IDR"] {
                 await MainActor.run {
                     self.usdToIdrRate = idrRate
                     self.lastFetchDate = now
-                    print("Exchange rate updated: 1 USD = \(idrRate) IDR")
                 }
             }
         } catch {
@@ -155,24 +187,27 @@ struct DashboardView: View {
         store.creditCards.reduce(0) { $0 + $1.remainingLimit }
     }
     
+    private var totalCCTotalLimit: Double {
+        store.creditCards.reduce(0) { $0 + $1.limit }
+    }
+
+    private var totalCCUsed: Double {
+        max(0, totalCCTotalLimit - totalCCLimitRemaining)
+    }
+    
     private func displayAmount(_ amount: Double) -> String {
         return showBalances ? formatIDR(amount) : "Rp ••••••••"
     }
     
-    // Custom Filtered & Converted Chart Data
     private var convertedChartData: [MonthlyChartData] {
         let cal = Calendar.current
         let fmt = DateFormatter()
         fmt.dateFormat = "MMM"
-        
         let monthCount: Int
         switch selectedChartRange {
-        case .last3Months:
-            monthCount = 3
-        case .last6Months:
-            monthCount = 6
-        case .thisYear:
-            monthCount = max(1, cal.component(.month, from: Date()))
+        case .last3Months: monthCount = 3
+        case .last6Months: monthCount = 6
+        case .thisYear: monthCount = max(1, cal.component(.month, from: Date()))
         }
         
         return (0..<monthCount).reversed().map { n in
@@ -184,24 +219,18 @@ struct DashboardView: View {
                 cal.component(.month, from: $0.date) == m
             }
             
-            // Konversi tx USD ke IDR untuk grafik
             let inflow = txs.filter { $0.type == .inflow }.reduce(0) { sum, tx in
                 let wallet = store.wallets.first { $0.id == tx.walletId }
                 let rate = wallet?.currency == .usd ? usdToIdrRate : 1.0
                 return sum + (tx.amount * rate)
             }
-            
             let outflow = txs.filter { $0.type == .outflow }.reduce(0) { sum, tx in
                 let wallet = store.wallets.first { $0.id == tx.walletId }
                 let rate = wallet?.currency == .usd ? usdToIdrRate : 1.0
                 return sum + (tx.amount * rate)
             }
             
-            return MonthlyChartData(
-                month: fmt.string(from: date),
-                inflow:  inflow,
-                outflow: outflow
-            )
+            return MonthlyChartData(month: fmt.string(from: date), inflow: inflow, outflow: outflow)
         }
     }
     
@@ -209,29 +238,22 @@ struct DashboardView: View {
     
     private var headerBar: some View {
         HStack {
-            // Profile Icon
             ZStack {
                 RoundedRectangle(cornerRadius: 12)
                     .fill(Color(red: 0.45, green: 0.2, blue: 0.9).opacity(0.2))
                     .frame(width: 44, height: 44)
-
-                Image("image_logo") // nama asset kamu di Assets.xcassets
+                Image("image_logo")
                     .resizable()
                     .scaledToFill()
                     .frame(width: 28, height: 28)
                     .clipShape(RoundedRectangle(cornerRadius: 6))
             }
-            
             Spacer()
-            
             Text("Home")
                 .font(.headline.weight(.semibold))
                 .foregroundStyle(.white)
-            
             Spacer()
-            
             HStack(spacing: 16) {
-                // Toggle Show/Hide Balance
                 Button {
                     withAnimation { showBalances.toggle() }
                 } label: {
@@ -239,11 +261,7 @@ struct DashboardView: View {
                         .font(.title3)
                         .foregroundStyle(.white)
                 }
-                
             }
-            
-            
-            
         }
         .padding(.horizontal, 16)
     }
@@ -252,8 +270,6 @@ struct DashboardView: View {
 
     private var swipeableCards: some View {
         TabView(selection: $currentCardIndex) {
-            
-            // Card 1: Total Balance / Net Worth (Sudah di-convert)
             balanceCard(
                 title: "Total Balance",
                 amount: totalNetWorthIDR,
@@ -261,7 +277,6 @@ struct DashboardView: View {
                 icon: "chart.line.uptrend.xyaxis"
             ).tag(0)
             
-            // Card 2: Wallet Debit (Sudah di-convert)
             balanceCard(
                 title: "Wallet Debit",
                 amount: totalWalletBalanceIDR,
@@ -269,20 +284,19 @@ struct DashboardView: View {
                 icon: "wallet.bifold.fill"
             ).tag(1)
             
-            // Card 3: Remaining Credit Limit (Memang IDR)
             balanceCard(
                 title: "Remaining CC Limit",
                 amount: totalCCLimitRemaining,
                 gradient: [Color(red: 0.45, green: 0.2, blue: 0.9), Color(red: 0.2, green: 0.1, blue: 0.4)],
-                icon: "creditcard.fill"
+                icon: "creditcard.fill",
+                progress: (used: totalCCUsed, total: totalCCTotalLimit)
             ).tag(2)
-            
         }
         .tabViewStyle(.page(indexDisplayMode: .always))
-        .frame(height: 220) // Adjust height to make room for page dots
+        .frame(height: 220)
     }
 
-    private func balanceCard(title: String, amount: Double, gradient: [Color], icon: String) -> some View {
+    private func balanceCard(title: String, amount: Double, gradient: [Color], icon: String, progress: (used: Double, total: Double)? = nil) -> some View {
         VStack {
             VStack(alignment: .leading, spacing: 0) {
                 HStack {
@@ -301,16 +315,38 @@ struct DashboardView: View {
                     .minimumScaleFactor(0.5)
                     .lineLimit(1)
                 
+                if let progress {
+                    let ratio = progress.total > 0 ? min(max(progress.used / progress.total, 0), 1) : 0
+                    VStack(alignment: .leading, spacing: 6) {
+                        // Progress bar
+                        ZStack(alignment: .leading) {
+                            Capsule()
+                                .fill(Color.white.opacity(0.12))
+                                .frame(height: 8)
+                            Capsule()
+                                .fill(Color.neonGreen)
+                                .frame(width: max(0, ratio) * 1.0 *  (UIScreen.main.bounds.width - 32 - 48), height: 8)
+                        }
+                        // Labels
+                        HStack {
+                            Text("Used: \(formatIDR(progress.used))")
+                                .font(.caption2).foregroundStyle(.white.opacity(0.7))
+                            Spacer()
+                            Text("Limit: \(formatIDR(progress.total))")
+                                .font(.caption2).foregroundStyle(.white.opacity(0.7))
+                        }
+                    }
+                    .padding(.top, 10)
+                }
+                
                 Spacer()
                 
                 HStack {
-                    Text("Christian Gunawan")
+                    Text(signInManager.getDisplayName())
                         .font(.caption)
                         .foregroundStyle(.white.opacity(0.6))
                         .monospacedDigit()
-                    
                     Spacer()
-                    
                     HStack() {
                         Circle().fill(Color.red.opacity(0.8)).frame(width: 26, height: 26)
                         Circle().fill(Color.orange.opacity(0.8)).frame(width: 26, height: 26)
@@ -330,7 +366,7 @@ struct DashboardView: View {
             .shadow(color: Color.black.opacity(0.2), radius: 10, x: 0, y: 5)
             .padding(.horizontal, 16)
             
-            Spacer() // Push page dots down
+            Spacer()
         }
     }
     
@@ -370,6 +406,38 @@ struct DashboardView: View {
         .padding(.horizontal, 16)
     }
 
+    // MARK: - Custom Feature Cards (History & Stock)
+    
+    private var featureCardsSection: some View {
+        HStack(spacing: 12) {
+            // Split Bill History
+            NavigationLink(destination: SplitBillHistoryView().environment(store)) {
+                FeatureTile(
+                    icon: "doc.text.fill",
+                    title: "Split Bills",
+                    subtitle: "History",
+                    color: Color(red: 0.3, green: 0.6, blue: 1.0)
+                )
+            }
+            
+            // Stock Input (Future)
+            Button {
+                if let url = URL(string: "stockbit://") {
+                    UIApplication.shared.open(url)
+                }
+            } label: {
+                FeatureTile(
+                    icon: "shippingbox.fill",
+                    title: "StockBit",
+                    subtitle: "Open App",
+                    color: Color(white: 0.5)
+                )
+            }
+            
+        }
+        .padding(.horizontal, 16)
+    }
+
     // MARK: - Analytics (Working Bar Chart)
 
     private var analyticsSection: some View {
@@ -380,14 +448,10 @@ struct DashboardView: View {
                     .foregroundStyle(.white)
                 
                 Spacer()
-                
-                // Chart Range Filter Menu
                 Menu {
                     ForEach(ChartRange.allCases, id: \.self) { range in
                         Button(range.rawValue) {
-                            withAnimation {
-                                selectedChartRange = range
-                            }
+                            withAnimation { selectedChartRange = range }
                         }
                     }
                 } label: {
@@ -399,17 +463,15 @@ struct DashboardView: View {
                     }
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
-                    .background(Color(red: 0.95, green: 0.4, blue: 0.2)) // Orange pill
+                    .background(Color(red: 0.95, green: 0.4, blue: 0.2))
                     .cornerRadius(10)
                     .foregroundStyle(.white)
                 }
             }
             .padding(.horizontal, 16)
             
-            // Dynamic Grouped Bar Chart based on Selected Range
             Chart {
                 ForEach(convertedChartData) { item in
-                    // Inflow Bar
                     BarMark(
                         x: .value("Month", item.month),
                         y: .value("Amount", item.inflow)
@@ -418,27 +480,23 @@ struct DashboardView: View {
                     .position(by: .value("Type", "Inflow"))
                     .cornerRadius(4)
                     
-                    // Outflow Bar
                     BarMark(
                         x: .value("Month", item.month),
                         y: .value("Amount", item.outflow)
                     )
-                    .foregroundStyle(Color(red: 0.45, green: 0.2, blue: 0.9).gradient) // Purple for outflow
+                    .foregroundStyle(Color(red: 0.45, green: 0.2, blue: 0.9).gradient)
                     .position(by: .value("Type", "Outflow"))
                     .cornerRadius(4)
                 }
             }
             .chartXAxis {
-                AxisMarks { _ in
-                    AxisValueLabel().foregroundStyle(Color(white: 0.5)).font(.caption2)
-                }
+                AxisMarks { _ in AxisValueLabel().foregroundStyle(Color(white: 0.5)).font(.caption2) }
             }
             .chartYAxis(.hidden)
             .chartLegend(.hidden)
             .frame(height: 180)
             .padding(.horizontal, 16)
             
-            // Custom Legend
             HStack(spacing: 16) {
                 HStack(spacing: 4) {
                     Circle().fill(Color.neonGreen).frame(width: 8, height: 8)
@@ -456,7 +514,7 @@ struct DashboardView: View {
         .padding(.horizontal, 16)
     }
 
-    // MARK: - Transactions List
+    // MARK: - Transactions List (Combined Wallet & CC)
 
     private var recentTransactionsSection: some View {
         VStack(spacing: 16) {
@@ -464,10 +522,16 @@ struct DashboardView: View {
                 Text("Transactions")
                     .font(.title3.bold())
                     .foregroundStyle(.white)
+                Spacer()
             }
             .padding(.horizontal, 16)
 
-            let recentTxs = store.walletTransactions.sorted { $0.date > $1.date }.prefix(4)
+            // ✅ Combine both CC and Wallet transactions for recent view
+            let wTxs = store.walletTransactions.map { AnyTransaction.wallet($0) }
+            let cTxs = store.creditCards.flatMap { card in
+                card.transactions.map { AnyTransaction.cc($0, cardId: card.id) }
+            }
+            let recentTxs = (wTxs + cTxs).sorted { $0.date > $1.date }.prefix(4)
             
             if recentTxs.isEmpty {
                 Text("No recent transactions")
@@ -476,8 +540,18 @@ struct DashboardView: View {
                     .padding()
             } else {
                 VStack(spacing: 0) {
-                    ForEach(Array(recentTxs.enumerated()), id: \.element.id) { index, tx in
-                        TransactionRefRow(tx: tx, store: store, showBalances: showBalances)
+                    ForEach(Array(recentTxs.enumerated()), id: \.element.id) { index, item in
+                        Button {
+                            switch item {
+                            case .wallet(let tx):
+                                editWalletTx = tx
+                            case .cc(let tx, let cardId):
+                                editCCTxWrapper = CCEditWrapper(cardId: cardId, tx: tx)
+                            }
+                        } label: {
+                            AnyTransactionRow(item: item, store: store, showBalances: showBalances)
+                        }
+                        .buttonStyle(.plain)
                         
                         if index < recentTxs.count - 1 {
                             Divider()
@@ -495,16 +569,40 @@ struct DashboardView: View {
     }
 }
 
-// MARK: - Transaction Ref Row
+// MARK: - Subcomponents
 
-struct TransactionRefRow: View {
-    let tx: WalletTransaction
+struct FeatureTile: View {
+    let icon: String
+    let title: String
+    let subtitle: String
+    let color: Color
+
+    var body: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                Circle().fill(color.opacity(0.15)).frame(width: 44, height: 44)
+                Image(systemName: icon).font(.headline).foregroundStyle(color)
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.subheadline.bold())
+                    .foregroundStyle(.white)
+                Text(subtitle)
+                    .font(.caption2)
+                    .foregroundStyle(.dimText)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .glassEffect(in: .rect(cornerRadius: 16))
+    }
+}
+
+// ✅ New row capable of rendering both transaction types and enabling tap-to-edit
+struct AnyTransactionRow: View {
+    let item: AnyTransaction
     let store: AppStore
     let showBalances: Bool
-    
-    private var walletCurrency: Currency {
-        store.wallets.first(where: { $0.id == tx.walletId })?.currency ?? .idr
-    }
     
     var body: some View {
         HStack(spacing: 16) {
@@ -512,17 +610,17 @@ struct TransactionRefRow: View {
                 RoundedRectangle(cornerRadius: 12)
                     .fill(Color.white.opacity(0.06))
                     .frame(width: 48, height: 48)
-                Image(systemName: tx.type.icon)
+                Image(systemName: iconName)
                     .font(.title3)
-                    .foregroundStyle(tx.type == .inflow ? .neonGreen : .white)
+                    .foregroundStyle(iconColor)
             }
             
             VStack(alignment: .leading, spacing: 4) {
-                Text(tx.category.isEmpty ? tx.type.rawValue : tx.category)
+                Text(categoryName)
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.white)
                 
-                Text(walletName)
+                Text(accountName)
                     .font(.caption2)
                     .foregroundStyle(Color(white: 0.5))
             }
@@ -530,26 +628,70 @@ struct TransactionRefRow: View {
             Spacer()
             
             VStack(alignment: .trailing, spacing: 4) {
-                // Mempertahankan simbol IDR/USD sesuai wallet-nya
-                Text(showBalances ? tx.type.sign + formatCurrency(tx.amount, currency: walletCurrency) : "••••••")
+                Text(showBalances ? amountString : "••••••")
                     .font(.subheadline.weight(.bold))
-                    .foregroundStyle(tx.type == .inflow ? .neonGreen : .white)
+                    .foregroundStyle(amountColor)
                 
-                Text(tx.date, format: .dateTime.day().month().year())
+                Text(item.date, format: .dateTime.day().month().year())
                     .font(.caption2)
                     .foregroundStyle(Color(white: 0.5))
             }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
+        .contentShape(Rectangle()) // Makes entire row area tappable
     }
     
-    private var walletName: String {
-        store.wallets.first(where: { $0.id == tx.walletId })?.name ?? "Wallet"
+    private var isIncome: Bool {
+        switch item {
+        case .wallet(let tx): return tx.type == .inflow
+        case .cc: return false
+        }
+    }
+    
+    private var iconName: String {
+        switch item {
+        case .wallet(let tx): return tx.type.icon
+        case .cc: return "creditcard.fill"
+        }
+    }
+    
+    private var iconColor: Color { isIncome ? .neonGreen : .white }
+    
+    private var categoryName: String {
+        switch item {
+        case .wallet(let tx): return tx.category.isEmpty ? tx.type.rawValue : tx.category
+        case .cc(let tx, _): return tx.category.isEmpty ? "Credit Card" : tx.category
+        }
+    }
+    
+    private var accountName: String {
+        switch item {
+        case .wallet(let tx): return store.wallets.first(where: { $0.id == tx.walletId })?.name ?? "Wallet"
+        case .cc(_, let cardId): return store.creditCards.first(where: { $0.id == cardId })?.name ?? "Credit Card"
+        }
+    }
+    
+    private var amountString: String {
+        switch item {
+        case .wallet(let tx):
+            let currency = store.wallets.first(where: { $0.id == tx.walletId })?.currency ?? .idr
+            return tx.type.sign + formatCurrency(tx.amount, currency: currency)
+        case .cc(let tx, _):
+            return "-" + formatCurrency(tx.amount, currency: .idr) // Assuming base is IDR
+        }
+    }
+    
+    private var amountColor: Color { isIncome ? .neonGreen : .white }
+    
+    private func formatCurrency(_ value: Double, currency: Currency) -> String {
+        let f = NumberFormatter()
+        f.numberStyle = .decimal
+        f.maximumFractionDigits = 2
+        let num = f.string(from: NSNumber(value: value)) ?? "0"
+        return "\(currency.symbol) \(num)"
     }
 }
-
-// MARK: - Metric Tile
 
 struct MetricTile: View {
     let icon: String
@@ -573,8 +715,6 @@ struct MetricTile: View {
     }
 }
 
-// MARK: - Universal Add Transaction View
-
 struct UniversalAddTransactionView: View {
     @Environment(AppStore.self) private var store
     @Environment(\.categoryManager) private var categoryManager
@@ -589,7 +729,6 @@ struct UniversalAddTransactionView: View {
 
     private var isCC: Bool { selectedAccountId.hasPrefix("C-") }
     
-    // ✅ Getting Dynamic Categories from CategoryManager
     private var categories: [String] {
         if isCC || txType == .outflow {
             return categoryManager.categoryNames(for: .outflow)
@@ -616,9 +755,7 @@ struct UniversalAddTransactionView: View {
                 ScrollView {
                     VStack(spacing: 22) {
                         accountPicker
-                        
                         if !isCC { typeSelector }
-                        
                         amountField
                         categoryField
                         noteField
@@ -646,21 +783,15 @@ struct UniversalAddTransactionView: View {
             }
         }
     }
-    
-    // MARK: Fields
 
     private var accountPicker: some View {
         field("ACCOUNT", "building.columns") {
             Menu {
                 if !store.wallets.isEmpty {
-                    Section("Wallets") {
-                        ForEach(store.wallets) { w in Button(w.name) { selectedAccountId = "W-\(w.id)" } }
-                    }
+                    Section("Wallets") { ForEach(store.wallets) { w in Button(w.name) { selectedAccountId = "W-\(w.id)" } } }
                 }
                 if !store.creditCards.isEmpty {
-                    Section("Credit Cards") {
-                        ForEach(store.creditCards) { c in Button("\(c.bank) \(c.name)") { selectedAccountId = "C-\(c.id)" } }
-                    }
+                    Section("Credit Cards") { ForEach(store.creditCards) { c in Button("\(c.bank) \(c.name)") { selectedAccountId = "C-\(c.id)" } } }
                 }
                 if store.wallets.isEmpty && store.creditCards.isEmpty {
                     Button("No accounts available") {}.disabled(true)
@@ -796,3 +927,183 @@ struct UniversalAddTransactionView: View {
         dismiss()
     }
 }
+
+// MARK: - History Views Added for Dashboard
+
+struct SplitBillHistoryView: View {
+    @Environment(AppStore.self) private var store
+
+    var body: some View {
+        ZStack {
+            Color.appBg.ignoresSafeArea()
+            
+            if store.splitBills.isEmpty {
+                VStack(spacing: 16) {
+                    Image(systemName: "doc.text.magnifyingglass")
+                        .font(.system(size: 40))
+                        .foregroundStyle(.dimText)
+                    Text("No Split Bills Saved")
+                        .font(.headline)
+                        .foregroundStyle(.white)
+                }
+            } else {
+                List {
+                    ForEach(store.splitBills.sorted { $0.date > $1.date }) { record in
+                        NavigationLink(destination: SplitBillDetailView(record: record)) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(record.billName)
+                                    .font(.headline)
+                                    .foregroundStyle(.white)
+                                HStack {
+                                    Text("Paid by \(record.payerName)")
+                                    Spacer()
+                                    Text("\(record.currency.symbol) \(formatNumber(record.totalAmount))")
+                                        .font(.subheadline.weight(.bold))
+                                        .foregroundStyle(Color(red: 0.3, green: 0.6, blue: 1.0))
+                                }
+                                .font(.caption)
+                                .foregroundStyle(.glassText)
+                                
+                                Text(record.date, style: .date)
+                                    .font(.caption2)
+                                    .foregroundStyle(.dimText)
+                            }
+                            .padding(.vertical, 8)
+                        }
+                        .listRowBackground(Color.white.opacity(0.06))
+                        .listRowSeparatorTint(Color.white.opacity(0.1))
+                    }
+                    .onDelete { indices in
+                        let records = store.splitBills.sorted { $0.date > $1.date }
+                        for idx in indices {
+                            store.deleteSplitBill(records[idx].id)
+                        }
+                    }
+                }
+                .scrollContentBackground(.hidden)
+            }
+        }
+        .navigationTitle("Split Bill History")
+        #if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
+        #endif
+    }
+    
+    private func formatNumber(_ value: Double) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.maximumFractionDigits = 2
+        return formatter.string(from: NSNumber(value: value)) ?? "\(value)"
+    }
+}
+
+struct SplitBillDetailView: View {
+    let record: SplitBillRecord
+    
+    var body: some View {
+        ZStack {
+            Color.appBg.ignoresSafeArea()
+            
+            ScrollView {
+                VStack(spacing: 20) {
+                    // Header
+                    VStack(spacing: 8) {
+                        Text(record.billName)
+                            .font(.title2.weight(.bold))
+                            .foregroundStyle(.white)
+                        Text(record.date, style: .date)
+                            .font(.subheadline)
+                            .foregroundStyle(.dimText)
+                        
+                        Divider().background(Color.white.opacity(0.1)).padding(.vertical, 8)
+                        
+                        HStack {
+                            Text("Total Amount")
+                            Spacer()
+                            Text("\(record.currency.symbol) \(formatNumber(record.totalAmount))")
+                                .font(.title3.weight(.bold))
+                                .foregroundStyle(.neonGreen)
+                        }
+                        HStack {
+                            Text("Paid By")
+                            Spacer()
+                            Text(record.payerName)
+                                .font(.headline)
+                                .foregroundStyle(.white)
+                        }
+                    }
+                    .padding(16)
+                    .glassEffect(in: .rect(cornerRadius: 16))
+                    
+                    // Participants
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Participants (\(record.participants.count))")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.glassText)
+                        
+                        VStack(spacing: 0) {
+                            ForEach(record.participants) { p in
+                                HStack {
+                                    Text(p.name)
+                                        .foregroundStyle(.white)
+                                    Spacer()
+                                    Text("\(record.currency.symbol) \(formatNumber(p.amount))")
+                                        .foregroundStyle(Color(red: 0.3, green: 0.6, blue: 1.0))
+                                }
+                                .padding(.vertical, 12)
+                                .padding(.horizontal, 16)
+                                
+                                if p.id != record.participants.last?.id {
+                                    Divider().background(Color.white.opacity(0.1)).padding(.leading, 16)
+                                }
+                            }
+                        }
+                        .glassEffect(in: .rect(cornerRadius: 16))
+                    }
+                    
+                    // Items (if any)
+                    if !record.items.isEmpty {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Receipt Items")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.glassText)
+                            
+                            VStack(spacing: 0) {
+                                ForEach(record.items) { item in
+                                    HStack {
+                                        VStack(alignment: .leading) {
+                                            Text(item.name).foregroundStyle(.white)
+                                            Text("\(item.qty)x @ \(formatNumber(item.price))")
+                                                .font(.caption2)
+                                                .foregroundStyle(.dimText)
+                                        }
+                                        Spacer()
+                                        Text("\(record.currency.symbol) \(formatNumber(item.price * Double(item.qty)))")
+                                            .foregroundStyle(.white)
+                                    }
+                                    .padding(.vertical, 12)
+                                    .padding(.horizontal, 16)
+                                    
+                                    if item.id != record.items.last?.id {
+                                        Divider().background(Color.white.opacity(0.1)).padding(.leading, 16)
+                                    }
+                                }
+                            }
+                            .glassEffect(in: .rect(cornerRadius: 16))
+                        }
+                    }
+                }
+                .padding()
+            }
+        }
+        .navigationTitle("Details")
+    }
+    
+    private func formatNumber(_ value: Double) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.maximumFractionDigits = 2
+        return formatter.string(from: NSNumber(value: value)) ?? "\(value)"
+    }
+}
+

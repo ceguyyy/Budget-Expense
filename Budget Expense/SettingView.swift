@@ -6,10 +6,13 @@
 import SwiftUI
 import UniformTypeIdentifiers
 import Combine
+import CryptoKit
 
 struct SettingView: View {
     @Environment(AppStore.self) private var store
     @Environment(\.authenticationManager) private var authManager
+    @Environment(\.appleSignInManager) private var signInManager
+    @Environment(\.cloudKitManager) private var cloudKitManager
     
     @State private var showingExporter = false
     @State private var exportURL: URL?
@@ -19,9 +22,167 @@ struct SettingView: View {
     @State private var showCurrencyRates = false
     @State private var showResetPIN = false
     @State private var showCategoryManagement = false
+    @State private var showSignInSheet = false
+    @State private var isSyncing = false
+    @State private var showSyncSuccess = false
+    @State private var showRestoreConfirmation = false
+    
+    // JSON Export/Import
+    @State private var showingJSONExporter = false
+    @State private var jsonExportURL: URL?
+    @State private var showingJSONImporter = false
+    @State private var showImportConfirmation = false
+    @State private var pendingImportURL: URL?
+    
+    // Split Bill Detail Sheet
+    @State private var showSplitBillDetail = false
     
     var body: some View {
         List {
+            // MARK: - Account Section
+            Section(header: Text("Account").foregroundStyle(.glassText)) {
+                if signInManager.isSignedIn {
+                    // Signed In State
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Image(systemName: "person.crop.circle.fill")
+                                .font(.title)
+                                .foregroundStyle(.neonGreen)
+                            
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(signInManager.getDisplayName())
+                                    .font(.headline)
+                                    .foregroundStyle(.white)
+                                
+                                if let email = signInManager.userEmail {
+                                    Text(email)
+                                        .font(.caption)
+                                        .foregroundStyle(.glassText)
+                                }
+                            }
+                            
+                            Spacer()
+                        }
+                        .padding(.vertical, 8)
+                        
+                        Button {
+                            signInManager.signOut()
+                        } label: {
+                            HStack {
+                                Image(systemName: "arrow.right.square")
+                                Text("Sign Out")
+                            }
+                            .font(.subheadline)
+                            .foregroundStyle(.neonRed)
+                        }
+                    }
+                    .padding(.vertical, 4)
+                    .listRowBackground(Color(white: 0.12))
+                    
+                } else {
+                    // Sign In Button
+                    Button {
+                        showSignInSheet = true
+                    } label: {
+                        HStack {
+                            Image(systemName: "person.crop.circle.badge.plus")
+                                .foregroundStyle(.neonGreen)
+                                .frame(width: 24)
+                            Text("Sign in with Apple")
+                                .foregroundStyle(.white)
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .foregroundStyle(.gray)
+                                .font(.caption)
+                        }
+                    }
+                    .listRowBackground(Color(white: 0.12))
+                }
+            }
+            
+            // MARK: - iCloud Sync Section
+            if signInManager.isSignedIn {
+                Section(header: Text("iCloud Backup").foregroundStyle(.glassText)) {
+                    // Cloud Status
+                    HStack {
+                        Image(systemName: cloudKitManager.isCloudKitAvailable ? "icloud.fill" : "icloud.slash")
+                            .foregroundStyle(cloudKitManager.isCloudKitAvailable ? .neonGreen : .neonRed)
+                            .frame(width: 24)
+                        
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("iCloud Status")
+                                .foregroundStyle(.white)
+                            Text(cloudKitManager.isCloudKitAvailable ? "Available" : "Not Available")
+                                .font(.caption)
+                                .foregroundStyle(cloudKitManager.isCloudKitAvailable ? .neonGreen : .neonRed)
+                        }
+                        
+                        Spacer()
+                    }
+                    .listRowBackground(Color(white: 0.12))
+                    
+                    // Last Sync
+                    if let lastSync = cloudKitManager.lastSyncDate {
+                        HStack {
+                            Image(systemName: "clock")
+                                .foregroundStyle(.glassText)
+                                .frame(width: 24)
+                            
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Last Backup")
+                                    .foregroundStyle(.white)
+                                Text(lastSync, style: .relative)
+                                    .font(.caption)
+                                    .foregroundStyle(.glassText)
+                            }
+                            
+                            Spacer()
+                        }
+                        .listRowBackground(Color(white: 0.12))
+                    }
+                    
+                    // Backup Button
+                    Button {
+                        Task {
+                            await backupToCloud()
+                        }
+                    } label: {
+                        HStack {
+                            if isSyncing {
+                                ProgressView()
+                                    .tint(.white)
+                                    .frame(width: 24)
+                            } else {
+                                Image(systemName: "arrow.up.circle.fill")
+                                    .foregroundStyle(.neonGreen)
+                                    .frame(width: 24)
+                            }
+                            Text(isSyncing ? "Backing up..." : "Backup to iCloud")
+                                .foregroundStyle(.white)
+                            Spacer()
+                        }
+                    }
+                    .disabled(isSyncing || !cloudKitManager.isCloudKitAvailable)
+                    .listRowBackground(Color(white: 0.12))
+                    
+                    // Restore Button
+                    Button {
+                        showRestoreConfirmation = true
+                    } label: {
+                        HStack {
+                            Image(systemName: "arrow.down.circle.fill")
+                                .foregroundStyle(Color(red: 0.3, green: 0.6, blue: 1.0))
+                                .frame(width: 24)
+                            Text("Restore from iCloud")
+                                .foregroundStyle(.white)
+                            Spacer()
+                        }
+                    }
+                    .disabled(isSyncing || !cloudKitManager.isCloudKitAvailable)
+                    .listRowBackground(Color(white: 0.12))
+                }
+            }
+            
             // MARK: - Security Section
             Section(header: Text("Security").foregroundStyle(.glassText)) {
                 // Face ID / Touch ID Toggle
@@ -92,9 +253,49 @@ struct SettingView: View {
                     }
                 }
                 .listRowBackground(Color(white: 0.12))
+                
+                // Split Bill Detail Button - NEW
+                Button {
+                    showSplitBillDetail = true
+                } label: {
+                    HStack {
+                        Label("Split Bill Detail", systemImage: "person.2.crop.circle.badge.plus")
+                            .foregroundStyle(.white)
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .foregroundStyle(.gray)
+                            .font(.caption)
+                    }
+                }
+                .listRowBackground(Color(white: 0.12))
             }
             
             Section(header: Text("Data Management").foregroundStyle(.glassText)) {
+                // Export to JSON
+                Button {
+                    exportToJSON()
+                } label: {
+                    HStack {
+                        Label("Export All Data to JSON", systemImage: "square.and.arrow.up.on.square")
+                            .foregroundStyle(.neonGreen)
+                        Spacer()
+                    }
+                }
+                .listRowBackground(Color(white: 0.12))
+                
+                // Import from JSON
+                Button {
+                    showingJSONImporter = true
+                } label: {
+                    HStack {
+                        Label("Import Data from JSON", systemImage: "square.and.arrow.down.on.square")
+                            .foregroundStyle(Color(red: 0.3, green: 0.6, blue: 1.0))
+                        Spacer()
+                    }
+                }
+                .listRowBackground(Color(white: 0.12))
+                
+                // Export to CSV (existing)
                 Button {
                     exportToCSV()
                 } label: {
@@ -109,6 +310,10 @@ struct SettingView: View {
         }
         .scrollContentBackground(.hidden)
         .background(Color.appBg.ignoresSafeArea())
+        .task {
+            // Check CloudKit availability when view appears
+            await cloudKitManager.checkAvailabilityIfNeeded()
+        }
         // ✅ Native file exporter for saving the CSV file
         .fileExporter(
             isPresented: $showingExporter,
@@ -133,7 +338,7 @@ struct SettingView: View {
         .alert("Export Successful", isPresented: $showSuccessAlert) {
             Button("OK", role: .cancel) { }
         } message: {
-            Text("Your transactions have been exported successfully.")
+            Text("Your data has been exported successfully.")
         }
         .alert("Export Failed", isPresented: $showErrorAlert) {
             Button("OK", role: .cancel) { }
@@ -149,10 +354,200 @@ struct SettingView: View {
         .sheet(isPresented: $showCategoryManagement) {
             CategoryManagementView()
         }
+        .sheet(isPresented: $showSignInSheet) {
+            AppleSignInSheet()
+        }
+        .alert("Backup Successful", isPresented: $showSyncSuccess) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text("Your data has been backed up to iCloud successfully.")
+        }
+        .alert("Restore from iCloud", isPresented: $showRestoreConfirmation) {
+            Button("Cancel", role: .cancel) { }
+            Button("Restore", role: .destructive) {
+                Task {
+                    await restoreFromCloud()
+                }
+            }
+        } message: {
+            Text("This will replace all current data with data from iCloud. This action cannot be undone.")
+        }
+        // JSON Export
+        .fileExporter(
+            isPresented: $showingJSONExporter,
+            document: JSONBackupFile(url: jsonExportURL),
+            contentType: .json,
+            defaultFilename: "BudgetExpense_Backup_\(Date().formatted(date: .numeric, time: .omitted)).json"
+        ) { result in
+            switch result {
+            case .success(let url):
+                print("✅ JSON backup successfully saved to \(url)")
+                showSuccessAlert = true
+                // Clean up temp file
+                if let tempURL = jsonExportURL {
+                    try? FileManager.default.removeItem(at: tempURL)
+                }
+            case .failure(let error):
+                print("❌ Failed to save JSON: \(error.localizedDescription)")
+                errorMessage = error.localizedDescription
+                showErrorAlert = true
+            }
+        }
+        // JSON Import
+        .fileImporter(
+            isPresented: $showingJSONImporter,
+            allowedContentTypes: [.json],
+            allowsMultipleSelection: false
+        ) { result in
+            switch result {
+            case .success(let urls):
+                if let url = urls.first {
+                    pendingImportURL = url
+                    showImportConfirmation = true
+                }
+            case .failure(let error):
+                print("❌ Failed to select file: \(error.localizedDescription)")
+                errorMessage = error.localizedDescription
+                showErrorAlert = true
+            }
+        }
+        .alert("Import Backup", isPresented: $showImportConfirmation) {
+            Button("Cancel", role: .cancel) {
+                pendingImportURL = nil
+            }
+            Button("Import", role: .destructive) {
+                if let url = pendingImportURL {
+                    importFromJSON(url: url)
+                    pendingImportURL = nil
+                }
+            }
+        } message: {
+            Text("This will replace all current data with data from the backup file. This action cannot be undone.")
+        }
+        // Split Bill Detail Sheet
+        .sheet(isPresented: $showSplitBillDetail) {
+            SplitBillView()
+                .environment(store)
+        }
+    }
+    
+    private func backupToCloud() async {
+        isSyncing = true
+        do {
+            try await cloudKitManager.backupToCloud(store: store)
+            showSyncSuccess = true
+        } catch {
+            errorMessage = error.localizedDescription
+            showErrorAlert = true
+        }
+        isSyncing = false
+    }
+    
+    private func restoreFromCloud() async {
+        isSyncing = true
+        do {
+            let restoredStore = try await cloudKitManager.restoreFromCloud()
+            // Replace current store data with restored data
+            store.wallets = restoredStore.wallets
+            store.walletTransactions = restoredStore.walletTransactions
+            store.creditCards = restoredStore.creditCards
+            store.debts = restoredStore.debts
+            store.splitBills = restoredStore.splitBills
+            
+            showSuccessAlert = true
+        } catch {
+            errorMessage = error.localizedDescription
+            showErrorAlert = true
+        }
+        isSyncing = false
     }
     
     private func printSuccess() {
         print("🔄 Sucess")
+    }
+    
+    // MARK: - JSON Export/Import Functions
+    
+    private func exportToJSON() {
+        print("🔄 Starting JSON export...")
+        
+        let backup = AppStoreBackup(
+            wallets: store.wallets,
+            walletTransactions: store.walletTransactions,
+            creditCards: store.creditCards,
+            debts: store.debts,
+            splitBills: store.splitBills
+        )
+        
+        do {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            encoder.dateEncodingStrategy = .iso8601
+            
+            let jsonData = try encoder.encode(backup)
+            
+            // Write to temporary file
+            let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("backup.json")
+            try jsonData.write(to: tempURL)
+            
+            print("✅ JSON backup created with:")
+            print("   - \(store.wallets.count) wallets")
+            print("   - \(store.walletTransactions.count) wallet transactions")
+            print("   - \(store.creditCards.count) credit cards")
+            print("   - \(store.debts.count) debts")
+            print("   - \(store.splitBills.count) split bills")
+            
+            jsonExportURL = tempURL
+            showingJSONExporter = true
+        } catch {
+            print("❌ Failed to create JSON backup: \(error)")
+            errorMessage = error.localizedDescription
+            showErrorAlert = true
+        }
+    }
+    
+    private func importFromJSON(url: URL) {
+        print("🔄 Starting JSON import from: \(url)")
+        
+        // Start accessing security-scoped resource
+        guard url.startAccessingSecurityScopedResource() else {
+            errorMessage = "Cannot access the selected file"
+            showErrorAlert = true
+            return
+        }
+        
+        defer {
+            url.stopAccessingSecurityScopedResource()
+        }
+        
+        do {
+            let jsonData = try Data(contentsOf: url)
+            
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            
+            let backup = try decoder.decode(AppStoreBackup.self, from: jsonData)
+            
+            // Replace current store data with imported data
+            store.wallets = backup.wallets
+            store.walletTransactions = backup.walletTransactions
+            store.creditCards = backup.creditCards
+            store.debts = backup.debts
+            store.splitBills = backup.splitBills
+            
+            print("✅ JSON import successful:")
+            print("   - \(backup.wallets.count) wallets")
+            print("   - \(backup.walletTransactions.count) wallet transactions")
+            print("   - \(backup.creditCards.count) credit cards")
+            print("   - \(backup.debts.count) debts")
+            print("   - \(backup.splitBills.count) split bills")
+            
+            showSuccessAlert = true
+        } catch {
+            print("❌ Failed to import JSON: \(error)")
+            errorMessage = "Failed to import backup: \(error.localizedDescription)"
+            showErrorAlert = true
+        }
     }
     
     private func exportToCSV() {
@@ -1023,6 +1418,44 @@ struct ExchangeRateResponse: Codable {
     let rates: [String: Double]
 }
 
+// MARK: - Backup Models
+
+struct AppStoreBackup: Codable {
+    let wallets: [Wallet]
+    let walletTransactions: [WalletTransaction]
+    let creditCards: [CreditCard]
+    let debts: [Debt]
+    let splitBills: [SplitBillRecord]
+}
+
+// MARK: - JSON Backup File Document Wrapper
+struct JSONBackupFile: FileDocument {
+    static var readableContentTypes: [UTType] { [.json] }
+    
+    var url: URL?
+    
+    init(url: URL?) {
+        self.url = url
+    }
+    
+    init(configuration: ReadConfiguration) throws {
+        // Not needed for export-only
+        url = nil
+    }
+    
+    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        guard let url = url else {
+            throw CocoaError(.fileNoSuchFile)
+        }
+        
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            throw CocoaError(.fileNoSuchFile)
+        }
+        
+        return try FileWrapper(url: url)
+    }
+}
+
 // MARK: - CSV File Document Wrapper
 struct CSVFile: FileDocument {
     static var readableContentTypes: [UTType] { [.commaSeparatedText] }
@@ -1057,3 +1490,4 @@ struct CSVFile: FileDocument {
         .environment(\.authenticationManager, AuthenticationManager())
         .environment(AppStore())
 }
+

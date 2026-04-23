@@ -19,6 +19,13 @@
     - "Use Face ID for secure access to your financial data"
     - "Authenticate with Face ID to access your budget information"
     -->
-    
+    <key>com.apple.developer.icloud-container-identifiers</key>
+    <array>
+        <string>iCloud.com.yourcompany.Budget-Expense</string>
+    </array>
+    <key>com.apple.developer.icloud-services</key>
+    <array>
+        <string>CloudKit</string>
+    </array>
 </dict>
 </plist>

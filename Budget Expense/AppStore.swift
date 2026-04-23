@@ -141,6 +141,33 @@ struct Debt: Identifiable, Codable {
     func formattedAmount() -> String { formatCurrency(amount, currency: currency) }
 }
 
+// MARK: - Split Bill Records (History)
+
+struct SplitItemRecord: Identifiable, Codable {
+    var id = UUID()
+    var name: String
+    var price: Double
+    var qty: Int
+}
+
+struct SplitParticipantRecord: Identifiable, Codable {
+    var id = UUID()
+    var name: String
+    var amount: Double
+    var percentage: Double
+}
+
+struct SplitBillRecord: Identifiable, Codable {
+    var id = UUID()
+    var billName: String
+    var payerName: String
+    var totalAmount: Double
+    var currency: Currency
+    var date: Date
+    var items: [SplitItemRecord]
+    var participants: [SplitParticipantRecord]
+}
+
 // MARK: - Chart Data
 
 struct MonthlyChartData: Identifiable {
@@ -158,11 +185,13 @@ class AppStore {
     var walletTransactions: [WalletTransaction] = []
     var creditCards: [CreditCard] = []
     var debts: [Debt] = []
+    var splitBills: [SplitBillRecord] = []
 
     private let walletsKey   = "budget_expense_wallets"
     private let txKey        = "store_wallet_tx_v2"
     private let ccKey        = "store_credit_cards_v2"
     private let debtKey      = "store_debts_v2"
+    private let splitBillKey = "store_split_bills_v2"
 
     init() { load() }
 
@@ -274,6 +303,10 @@ class AppStore {
     func deleteDebt(_ id: UUID){ debts.removeAll { $0.id == id }; saveDebt() }
     func deleteDebts(at offsets: IndexSet) { debts.remove(atOffsets: offsets); saveDebt() }
 
+    // MARK: Split Bill History CRUD
+    func addSplitBill(_ record: SplitBillRecord) { splitBills.append(record); saveSplitBills() }
+    func deleteSplitBill(_ id: UUID) { splitBills.removeAll { $0.id == id }; saveSplitBills() }
+
     // MARK: Billing Cycle Logic
 
     func billingCycleDates(for card: CreditCard) -> (start: Date, end: Date) {
@@ -379,6 +412,7 @@ class AppStore {
     private func saveTx()      { encode(walletTransactions, key: txKey) }
     private func saveCC()      { encode(creditCards, key: ccKey) }
     private func saveDebt()    { encode(debts, key: debtKey) }
+    private func saveSplitBills() { encode(splitBills, key: splitBillKey) }
 
     private func encode<T: Encodable>(_ value: T, key: String) {
         if let d = try? JSONEncoder().encode(value) { UserDefaults.standard.set(d, forKey: key) }
@@ -394,5 +428,6 @@ class AppStore {
         walletTransactions  = decode([WalletTransaction].self, key: txKey)      ?? []
         creditCards         = decode([CreditCard].self,        key: ccKey)      ?? []
         debts               = decode([Debt].self,              key: debtKey)    ?? []
+        splitBills          = decode([SplitBillRecord].self,   key: splitBillKey) ?? []
     }
 }
