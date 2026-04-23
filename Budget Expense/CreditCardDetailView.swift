@@ -1,4 +1,3 @@
-
 //
 //  CreditCardDetailView.swift
 //  Budget Expense
@@ -39,7 +38,7 @@ struct CreditCardDetailView: View {
             ToolbarItem(placement: .primaryAction) {
                 Menu {
                     Button { showAddTx   = true } label: { Label("Add Transaction",  systemImage: "plus.circle") }
-                    Button { showAddInst = true } label: { Label("Add Installment",  systemImage: "clock.badge.plus") }
+                    Button { showAddInst = true } label: { Label("Add Installment",  systemImage: "clock.badge") }
                 } label: {
                     Image(systemName: "plus").fontWeight(.semibold)
                 }
@@ -164,6 +163,11 @@ struct CreditCardDetailView: View {
             } else {
                 ForEach(txs) { tx in
                     CCTransactionRow(tx: tx)
+                        // ✅ Tambahkan Context Menu
+                        .contextMenu {
+                            Button(role: .destructive) { store.deleteCCTransaction(tx.id, from: card.id) }
+                            label: { Label("Delete", systemImage: "trash") }
+                        }
                         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                             Button(role: .destructive) { store.deleteCCTransaction(tx.id, from: card.id) }
                             label: { Label("Delete", systemImage: "trash") }
@@ -185,6 +189,14 @@ struct CreditCardDetailView: View {
             } else {
                 ForEach(active) { inst in
                     InstallmentRow(inst: inst)
+                        // ✅ Tambahkan Context Menu
+                        .contextMenu {
+                            Button { editInstTarget = inst }
+                            label: { Label("Edit", systemImage: "pencil") }
+                            
+                            Button(role: .destructive) { store.deleteInstallment(inst.id, from: card.id) }
+                            label: { Label("Delete", systemImage: "trash") }
+                        }
                         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                             Button(role: .destructive) { store.deleteInstallment(inst.id, from: card.id) }
                             label: { Label("Delete", systemImage: "trash") }

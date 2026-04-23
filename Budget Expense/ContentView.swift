@@ -1,9 +1,3 @@
-
-//
-//  ContentView.swift
-//  Budget Expense
-//
-
 import SwiftUI
 
 struct ContentView: View {
@@ -11,21 +5,53 @@ struct ContentView: View {
 
     var body: some View {
         TabView {
+
             Tab("Overview", systemImage: "chart.bar.fill") {
-                DashboardView()
+                NavigationStack {
+                    DashboardView()
+                        .navigationTitle("Overview")
+                }
             }
+
             Tab("Wallets", systemImage: "wallet.bifold") {
-                DebitView()
+                NavigationStack {
+                    DebitView()
+                        .navigationTitle("Wallets")
+                }
             }
+
             Tab("Credit", systemImage: "creditcard.fill") {
-                CreditCardListView()
+                NavigationStack {
+                    CreditCardListView()
+                        .navigationTitle("Credit Cards")
+                }
             }
+
             Tab("Receivables", systemImage: "person.2.fill") {
-                DebtListView()
+                NavigationStack {
+                    DebtListView()
+                        .navigationTitle("Receivables")
+                }
+            }
+            
+            Tab("Settings", systemImage: "gear"){
+                NavigationStack{
+                    SettingView()
+                        .navigationTitle("Settings")
+                }
             }
         }
         .environment(store)
         .preferredColorScheme(.dark)
+
+        // ✅ RESET ke native tab bar
+        .onAppear {
+            let appearance = UITabBarAppearance()
+            appearance.configureWithDefaultBackground()
+
+            UITabBar.appearance().standardAppearance = appearance
+            UITabBar.appearance().scrollEdgeAppearance = appearance
+        }
     }
 }
 

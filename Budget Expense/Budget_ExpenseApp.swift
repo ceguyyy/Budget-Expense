@@ -12,6 +12,7 @@ struct Budget_ExpenseApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .ignoresSafeArea()
         }
     }
 }

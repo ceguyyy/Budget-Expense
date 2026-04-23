@@ -1,4 +1,3 @@
-
 //
 //  AddTransactionView.swift
 //  Budget Expense
@@ -8,6 +7,8 @@ import SwiftUI
 
 struct AddTransactionView: View {
     let wallet: Wallet
+    var editTarget: WalletTransaction? = nil
+    
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
 
@@ -41,7 +42,7 @@ struct AddTransactionView: View {
                     .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 40)
                 }
             }
-            .navigationTitle("New Transaction")
+            .navigationTitle(editTarget != nil ? "Edit Transaction" : "New Transaction")
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
@@ -49,6 +50,9 @@ struct AddTransactionView: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }.foregroundStyle(.glassText)
                 }
+            }
+            .onAppear {
+                prefill()
             }
         }
     }
@@ -129,7 +133,7 @@ struct AddTransactionView: View {
         Button(action: save) {
             HStack(spacing: 8) {
                 Image(systemName: "checkmark.circle.fill")
-                Text("Save Transaction").fontWeight(.semibold)
+                Text(editTarget != nil ? "Save Changes" : "Save Transaction").fontWeight(.semibold)
             }
             .frame(maxWidth: .infinity).padding(.vertical, 17)
         }
@@ -162,14 +166,29 @@ struct AddTransactionView: View {
         .buttonStyle(.plain)
     }
 
+    private func prefill() {
+        guard let tx = editTarget else { return }
+        txType = tx.type
+        amountText = tx.amount.truncatingRemainder(dividingBy: 1) == 0 ? String(format: "%.0f", tx.amount) : "\(tx.amount)"
+        category = tx.category
+        note = tx.note
+        date = tx.date
+    }
+
     private func save() {
         let amount = Double(amountText.replacingOccurrences(of: ",", with: ".")) ?? 0
         guard amount > 0 else { return }
         let tx = WalletTransaction(
+            id: editTarget?.id ?? UUID(),
             walletId: wallet.id, amount: amount, type: txType,
             category: category, note: note, date: date
         )
-        store.addTransaction(tx)
+        
+        if let oldTx = editTarget {
+            store.updateTransaction(oldTx: oldTx, newTx: tx)
+        } else {
+            store.addTransaction(tx)
+        }
         dismiss()
     }
 }

@@ -5,15 +5,27 @@
 
 import SwiftUI
 
+enum DebitActiveSheet: Identifiable {
+    case add
+    case edit(Wallet)
+    
+    var id: String {
+        switch self {
+        case .add: return "add"
+        case .edit(let w): return w.id.uuidString
+        }
+    }
+}
+
 struct DebitView: View {
     @Environment(AppStore.self) private var store
-    @State private var showAdd = false
-    @State private var editTarget: Wallet?
+    @State private var activeSheet: DebitActiveSheet?
 
     var body: some View {
         NavigationStack {
-            ZStack {
-                // ✅ Background full screen (aman)
+            // ✅ ZStack dengan alignment bottomTrailing untuk FAB
+            ZStack(alignment: .bottomTrailing) {
+                
                 Color.appBg
                     .ignoresSafeArea()
 
@@ -22,18 +34,20 @@ struct DebitView: View {
                 } else {
                     walletList
                 }
-            }
-            .navigationTitle("Wallets")
-            .safeAreaInset(edge: .bottom, alignment: .trailing, spacing: 0) {
+                
+                // ✅ FAB dipindah ke dalam ZStack agar selalu responsif (sekali klik)
                 fab
             }
-            .sheet(isPresented: $showAdd) {
-                AddEditWalletView(editTarget: nil)
-                    .environment(store)
-            }
-            .sheet(item: $editTarget) { w in
-                AddEditWalletView(editTarget: w)
-                    .environment(store)
+            .navigationTitle("Wallets")
+            .sheet(item: $activeSheet) { sheet in
+                switch sheet {
+                case .add:
+                    AddEditWalletView(editTarget: nil)
+                        .environment(store)
+                case .edit(let wallet):
+                    AddEditWalletView(editTarget: wallet)
+                        .environment(store)
+                }
             }
         }
     }
@@ -52,16 +66,39 @@ struct DebitView: View {
                 .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden)
                 .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
-                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                
+                // ✅ Tambahan Context Menu (Tahan / Long Press untuk Edit)
+                .contextMenu {
+                    Button {
+                        activeSheet = .edit(wallet)
+                    } label: {
+                        Label("Edit", systemImage: "pencil")
+                    }
                     Button(role: .destructive) {
                         store.deleteWallet(wallet.id)
                     } label: {
                         Label("Delete", systemImage: "trash")
                     }
                 }
+                
+                // Swipe Action Tetap Ada
+                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                    Button(role: .destructive) {
+                        store.deleteWallet(wallet.id)
+                    } label: {
+                        Label("Delete", systemImage: "trash")
+                    }
+                    Button {
+                        activeSheet = .edit(wallet)
+                    } label: {
+                        Label("Edit", systemImage: "pencil")
+                    }
+                    .tint(.blue)
+                    
+                }
                 .swipeActions(edge: .leading) {
                     Button {
-                        editTarget = wallet
+                        activeSheet = .edit(wallet)
                     } label: {
                         Label("Edit", systemImage: "pencil")
                     }
@@ -71,7 +108,7 @@ struct DebitView: View {
 
             // spacing bawah biar gak ketiban FAB
             Color.clear
-                .frame(height: 80)
+                .frame(height: 100) // ✅ Area bawah dilegakan
                 .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden)
         }
@@ -81,21 +118,43 @@ struct DebitView: View {
 
     // MARK: - FAB
 
+//    private var fab: some View {
+//        Button {
+//           
+//        } label: {
+//            Image(systemName: "plus")
+//                .font(.title2.bold())
+//                .frame(width: 60, height: 60)
+//                .contentShape(Circle()) // ✅ Memastikan seluruh area bulat bisa di-klik
+//                .glassEffect(
+//                    .regular.tint(Color(white: 0.7)),
+//                    in: Circle()
+//                )
+//        }
+//        .buttonStyle(.plain)
+//        .padding(.trailing, 20)
+//        .padding(.bottom, 12)
+//    }
+    
+    
     private var fab: some View {
         Button {
-            showAdd = true
+            activeSheet = .add
         } label: {
             Image(systemName: "plus")
                 .font(.title2.bold())
-                .frame(width: 60, height: 60)
+                .foregroundStyle(.white)
+                .frame(width: 64, height: 64)
+                .background(Color(red: 0.95, green: 0.4, blue: 0.2)) // Orange FAB
+                .clipShape(Circle())
+                .shadow(color: Color(red: 0.95, green: 0.4, blue: 0.2).opacity(0.4), radius: 8, x: 0, y: 4)
                 .glassEffect(
-                    .regular.tint(Color(white: 0.7)).interactive(),
+                    .regular.tint(Color(white: 0.7)),
                     in: Circle()
                 )
         }
-        .buttonStyle(.plain)
         .padding(.trailing, 20)
-        .padding(.bottom, 12)
+        .padding(.bottom, 20)
     }
 
     // MARK: - Empty State
@@ -126,6 +185,8 @@ struct DebitView: View {
 
             Spacer()
         }
+        // Pastikan empty state berada di tengah
+        .frame(maxWidth: .infinity)
     }
 }
 
@@ -137,13 +198,33 @@ struct WalletListRow: View {
     var body: some View {
         HStack(spacing: 14) {
             ZStack {
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(wallet.accentColor.opacity(0.12))
-                    .frame(width: 50, height: 50)
+                // ✅ Check if there is image data and show it
+                if let imgData = wallet.imageData, let uiImage = UIImage(data: imgData) {
+                    Image(uiImage: uiImage)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: 50, height: 50)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        // ✅ Border logic matching the accent color (Green for Asset, Red for Liability)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12)
+                                .stroke(wallet.accentColor, lineWidth: 2)
+                        )
+                } else {
+                    // Fallback to initials
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(wallet.accentColor.opacity(0.12))
+                        .frame(width: 50, height: 50)
+                        // ✅ Adding border to the fallback shape as well for consistency
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12)
+                                .stroke(wallet.accentColor.opacity(0.5), lineWidth: 1.5)
+                        )
 
-                Text(wallet.initials)
-                    .font(.headline.bold())
-                    .foregroundStyle(wallet.accentColor)
+                    Text(wallet.initials)
+                        .font(.headline.bold())
+                        .foregroundStyle(wallet.accentColor)
+                }
             }
 
             VStack(alignment: .leading, spacing: 4) {

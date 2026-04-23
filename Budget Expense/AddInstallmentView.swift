@@ -1,4 +1,3 @@
-
 //
 //  AddInstallmentView.swift
 //  Budget Expense
@@ -15,12 +14,14 @@ struct AddInstallmentView: View {
     @State private var desc          = ""
     @State private var principalText = ""
     @State private var interestText  = "0"
-    @State private var months        = 12
+    @State private var monthsText    = "12" // ✅ Diubah menjadi String agar bisa diketik custom
     @State private var startDate     = Date()
 
     private var isEditMode: Bool { editTarget != nil }
     private var principal: Double { Double(principalText.replacingOccurrences(of: ",", with: ".")) ?? 0 }
     private var annualRate: Double { (Double(interestText.replacingOccurrences(of: ",", with: ".")) ?? 0) / 100 }
+    private var months: Int { Int(monthsText) ?? 0 } // ✅ Konversi ke Int
+    
     private var monthly: Double {
         guard principal > 0, months > 0 else { return 0 }
         let interest = principal * annualRate * Double(months) / 12
@@ -121,19 +122,17 @@ struct AddInstallmentView: View {
                 .padding(14).glassEffect(in: .rect(cornerRadius: 14))
             }
 
+            // ✅ Diubah menjadi TextField agar bisa input custom
             field("INSTALLMENT MONTHS", "calendar.badge.clock") {
-                HStack(spacing: 0) {
-                    ForEach([3, 6, 12, 18, 24, 36], id: \.self) { m in
-                        Button { withAnimation { months = m } } label: {
-                            Text("\(m)x").font(.caption.weight(.semibold))
-                                .frame(maxWidth: .infinity).padding(.vertical, 10)
-                                .glassEffect(months == m ? .regular.tint(Color(white: 0.6)) : .regular,
-                                             in: .rect(cornerRadius: 10))
-                                .foregroundStyle(months == m ? .white : Color(white: 0.38))
-                        }
-                        .buttonStyle(.plain)
-                    }
+                HStack(spacing: 10) {
+                    TextField("e.g. 12", text: $monthsText)
+                        #if os(iOS)
+                        .keyboardType(.numberPad)
+                        #endif
+                        .textFieldStyle(.plain).font(.headline).foregroundStyle(.white)
+                    Text("Months").font(.headline).foregroundStyle(.glassText)
                 }
+                .padding(14).glassEffect(in: .rect(cornerRadius: 14))
             }
 
             field("START DATE", "calendar") {
@@ -171,7 +170,7 @@ struct AddInstallmentView: View {
         desc          = i.description
         principalText = "\(Int(i.totalPrincipal))"
         interestText  = String(format: "%.1f", i.annualInterestRate * 100)
-        months        = i.totalMonths
+        monthsText    = "\(i.totalMonths)" // ✅ Load old month data correctly
         startDate     = i.startDate
     }
 

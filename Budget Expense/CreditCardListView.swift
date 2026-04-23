@@ -35,6 +35,8 @@ struct CreditCardListView: View {
                 AddEditCreditCardView(editTarget: card)
                     .environment(store)
             }
+            
+            
         }
     }
 
@@ -52,14 +54,25 @@ struct CreditCardListView: View {
                 .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden)
                 .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
-                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                // ✅ Context Menu untuk Edit via Long Press
+                .contextMenu {
+                    Button {
+                        editTarget = card
+                    } label: {
+                        Label("Edit", systemImage: "pencil")
+                    }
                     Button(role: .destructive) {
                         store.deleteCreditCard(card.id)
                     } label: {
                         Label("Delete", systemImage: "trash")
                     }
                 }
-                .swipeActions(edge: .leading) {
+                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                    Button(role: .destructive) {
+                        store.deleteCreditCard(card.id)
+                    } label: {
+                        Label("Delete", systemImage: "trash")
+                    }
                     Button {
                         editTarget = card
                     } label: {
@@ -67,6 +80,7 @@ struct CreditCardListView: View {
                     }
                     .tint(.blue)
                 }
+                
             }
 
             // spacer biar gak ketiban FAB
@@ -87,15 +101,18 @@ struct CreditCardListView: View {
         } label: {
             Image(systemName: "plus")
                 .font(.title2.bold())
-                .frame(width: 60, height: 60)
+                .foregroundStyle(.white)
+                .frame(width: 64, height: 64)
+                .background(Color(red: 0.95, green: 0.4, blue: 0.2)) // Orange FAB
+                .clipShape(Circle())
+                .shadow(color: Color(red: 0.95, green: 0.4, blue: 0.2).opacity(0.4), radius: 8, x: 0, y: 4)
                 .glassEffect(
-                    .regular.tint(Color(white: 0.7)).interactive(),
+                    .regular.tint(Color(white: 0.7)),
                     in: Circle()
                 )
         }
-        .buttonStyle(.plain)
         .padding(.trailing, 20)
-        .padding(.bottom, 12)
+        .padding(.bottom, 20)
     }
 
     // MARK: - Empty

@@ -1,4 +1,3 @@
-
 //
 //  AppStore.swift
 //  Budget Expense
@@ -22,6 +21,7 @@ struct Wallet: Identifiable, Codable {
     var balance: Double
     var currency: Currency
     var isPositive: Bool
+    var imageData: Data? // Added this property to resolve the missing member error
 
     var signedBalance: Double { isPositive ? balance : -balance }
     var initials: String { String(name.prefix(2)).uppercased() }
@@ -184,6 +184,15 @@ class AppStore {
     func addTransaction(_ tx: WalletTransaction) {
         walletTransactions.append(tx)
         applyBalanceChange(tx: tx, factor: 1)
+        saveWallets(); saveTx()
+    }
+
+    func updateTransaction(oldTx: WalletTransaction, newTx: WalletTransaction) {
+        // Revert old transaction's effect on balance
+        applyBalanceChange(tx: oldTx, factor: -1)
+        // Apply new transaction's effect on balance
+        applyBalanceChange(tx: newTx, factor: 1)
+        replace(&walletTransactions, id: newTx.id, with: newTx)
         saveWallets(); saveTx()
     }
 
@@ -380,4 +389,3 @@ class AppStore {
         debts               = decode([Debt].self,              key: debtKey)    ?? []
     }
 }
-

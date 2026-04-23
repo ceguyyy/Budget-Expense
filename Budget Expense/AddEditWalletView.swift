@@ -1,10 +1,10 @@
-
 //
 //  AddEditWalletView.swift
 //  Budget Expense
 //
 
 import SwiftUI
+import PhotosUI // ✅ Import PhotosUI for image picking
 
 struct AddEditWalletView: View {
     let editTarget: Wallet?
@@ -15,6 +15,10 @@ struct AddEditWalletView: View {
     @State private var balanceText = ""
     @State private var currency    = Currency.idr
     @State private var isPositive  = true
+    
+    // ✅ State for Image Picking
+    @State private var selectedPhotoItem: PhotosPickerItem?
+    @State private var imageData: Data?
 
     private var isEditMode: Bool { editTarget != nil }
     private var canSave: Bool {
@@ -26,7 +30,7 @@ struct AddEditWalletView: View {
     }
     private var previewWallet: Wallet {
         Wallet(name: name.isEmpty ? "Wallet Name" : name,
-               balance: parsedBalance, currency: currency, isPositive: isPositive)
+               balance: parsedBalance, currency: currency, isPositive: isPositive, imageData: imageData) // ✅ Pass imageData to preview
     }
 
     var body: some View {
@@ -36,6 +40,7 @@ struct AddEditWalletView: View {
                 ScrollView {
                     VStack(spacing: 22) {
                         previewCard
+                        imagePicker // ✅ Added image picker UI
                         fields
                         saveBtn
                     }
@@ -52,6 +57,14 @@ struct AddEditWalletView: View {
                 }
             }
             .onAppear { prefill() }
+            // ✅ Load the image data when a photo is selected
+            .onChange(of: selectedPhotoItem) { _, newItem in
+                Task {
+                    if let data = try? await newItem?.loadTransferable(type: Data.self) {
+                        imageData = data
+                    }
+                }
+            }
         }
     }
 
@@ -62,6 +75,50 @@ struct AddEditWalletView: View {
             Text("PREVIEW").font(.caption2.weight(.semibold)).foregroundStyle(.dimText).kerning(1.5)
                 .padding(.leading, 4)
             WalletListRow(wallet: previewWallet)
+        }
+    }
+
+    // MARK: Image Picker
+    
+    private var imagePicker: some View {
+        field(title: "WALLET IMAGE", icon: "photo") {
+            HStack(spacing: 12) {
+                if let imageData, let uiImage = UIImage(data: imageData) {
+                    Image(uiImage: uiImage)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: 50, height: 50)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                } else {
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(Color(white: 0.12))
+                        .frame(width: 50, height: 50)
+                        .overlay(Image(systemName: "photo").foregroundStyle(.glassText))
+                }
+                
+                PhotosPicker(selection: $selectedPhotoItem, matching: .images, photoLibrary: .shared()) {
+                    Text(imageData == nil ? "Select Image" : "Change Image")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(Color(white: 0.15), in: Capsule())
+                }
+                
+                if imageData != nil {
+                    Button(role: .destructive) {
+                        imageData = nil
+                        selectedPhotoItem = nil
+                    } label: {
+                        Image(systemName: "trash.circle.fill")
+                            .font(.title2)
+                            .foregroundStyle(.neonRed)
+                    }
+                }
+                
+                Spacer()
+            }
+            .padding(14).glassEffect(in: .rect(cornerRadius: 14))
         }
     }
 
@@ -163,12 +220,16 @@ struct AddEditWalletView: View {
         balanceText = "\(Int(w.balance))"
         currency    = w.currency
         isPositive  = w.isPositive
+        imageData   = w.imageData // ✅ Prefill the image data if it exists
     }
 
     private func save() {
         let w = Wallet(id: editTarget?.id ?? UUID(),
                        name: name.trimmingCharacters(in: .whitespaces),
-                       balance: parsedBalance, currency: currency, isPositive: isPositive)
+                       balance: parsedBalance, 
+                       currency: currency, 
+                       isPositive: isPositive,
+                       imageData: imageData) // ✅ Include the chosen image data here
         if isEditMode { store.updateWallet(w) } else { store.addWallet(w) }
         dismiss()
     }

@@ -16,7 +16,8 @@ struct DebtListView: View {
 
     var body: some View {
         NavigationStack {
-            ZStack {
+            // ✅ Menggunakan ZStack dengan bottomTrailing untuk FAB
+            ZStack(alignment: .bottomTrailing) {
                 // ✅ background aman full screen
                 Color.appBg
                     .ignoresSafeArea()
@@ -26,16 +27,11 @@ struct DebtListView: View {
                 } else {
                     debtList
                 }
+                
+                // ✅ Tambahkan FAB di sini
+                fab
             }
             .navigationTitle("Receivables")
-            .toolbar {
-                ToolbarItem(placement: .primaryAction) {
-                    Button { showAdd = true } label: {
-                        Image(systemName: "plus").fontWeight(.semibold)
-                    }
-                    .buttonStyle(.glass)
-                }
-            }
             .sheet(isPresented: $showAdd) {
                 AddEditDebtView(editTarget: nil).environment(store)
             }
@@ -84,6 +80,26 @@ struct DebtListView: View {
                         .listRowBackground(Color.clear)
                         .listRowSeparator(.hidden)
                         .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                        // ✅ Context Menu untuk kemudahan edit / hapus
+                        .contextMenu {
+                            Button {
+                                editTarget = debt
+                            } label: {
+                                Label("Edit", systemImage: "pencil")
+                            }
+                            Button {
+                                var updated = debt
+                                updated.isSettled = true
+                                store.updateDebt(updated)
+                            } label: {
+                                Label("Mark Settled", systemImage: "checkmark.circle")
+                            }
+                            Button(role: .destructive) {
+                                store.deleteDebt(debt.id)
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                        }
                         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                             Button(role: .destructive) {
                                 store.deleteDebt(debt.id)
@@ -134,12 +150,35 @@ struct DebtListView: View {
                 .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
             }
 
-            Color.clear.frame(height: 40)
+            // ✅ Spacer agar elemen terakhir list tidak terhalang FAB
+            Color.clear.frame(height: 80)
                 .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden)
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
+    }
+    
+    // MARK: - FAB
+
+    private var fab: some View {
+        Button {
+            showAdd = true
+        } label: {
+            Image(systemName: "plus")
+                .font(.title2.bold())
+                .foregroundStyle(.white)
+                .frame(width: 64, height: 64)
+                .background(Color(red: 0.95, green: 0.4, blue: 0.2)) // Orange FAB
+                .clipShape(Circle())
+                .shadow(color: Color(red: 0.95, green: 0.4, blue: 0.2).opacity(0.4), radius: 8, x: 0, y: 4)
+                .glassEffect(
+                    .regular.tint(Color(white: 0.7)),
+                    in: Circle()
+                )
+        }
+        .padding(.trailing, 20)
+        .padding(.bottom, 20)
     }
 
     private func summaryPill(_ label: String, _ value: String, _ color: Color) -> some View {
@@ -180,6 +219,7 @@ struct DebtListView: View {
 
             Spacer()
         }
+        .frame(maxWidth: .infinity)
     }
 }
 
