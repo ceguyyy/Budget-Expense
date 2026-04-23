@@ -41,13 +41,13 @@ struct AddEditCreditCardView: View {
                     .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 40)
                 }
             }
-            .navigationTitle(isEditMode ? "Edit Kartu Kredit" : "Kartu Kredit Baru")
+            .navigationTitle(isEditMode ? "Edit Credit Card" : "New Credit Card")
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Batal") { dismiss() }.foregroundStyle(.glassText)
+                    Button("Cancel") { dismiss() }.foregroundStyle(.glassText)
                 }
             }
             .onAppear { prefill() }
@@ -57,7 +57,7 @@ struct AddEditCreditCardView: View {
     // MARK: Card Preview
 
     private var cardPreview: some View {
-        let previewCard = CreditCard(name: name.isEmpty ? "Nama Kartu" : name,
+        let previewCard = CreditCard(name: name.isEmpty ? "Card Name" : name,
                                      bank: bank.isEmpty ? "Bank" : bank,
                                      limit: parsedLimit, billingCycleDay: billingDay,
                                      dueDay: dueDay, colorIndex: colorIndex)
@@ -71,7 +71,7 @@ struct AddEditCreditCardView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(bank.isEmpty ? "Bank" : bank)
                             .font(.caption.weight(.semibold)).foregroundStyle(.white.opacity(0.7))
-                        Text(name.isEmpty ? "Nama Kartu" : name)
+                        Text(name.isEmpty ? "Card Name" : name)
                             .font(.headline.bold()).foregroundStyle(.white)
                     }
                     Spacer()
@@ -89,21 +89,21 @@ struct AddEditCreditCardView: View {
     private var fields: some View {
         VStack(spacing: 20) {
             // Name
-            field("NAMA / NICKNAME KARTU", "creditcard") {
+            field("CARD NAME", "creditcard") {
                 TextField("e.g. BCA Platinum, Visa 1234", text: $name)
                     .textFieldStyle(.plain).font(.body).foregroundStyle(.white)
                     .padding(14).glassEffect(in: .rect(cornerRadius: 14))
             }
 
             // Bank
-            field("NAMA BANK", "building.columns") {
+            field("BANK", "building.columns") {
                 TextField("e.g. BCA, Mandiri, BNI", text: $bank)
                     .textFieldStyle(.plain).font(.body).foregroundStyle(.white)
                     .padding(14).glassEffect(in: .rect(cornerRadius: 14))
             }
 
             // Limit
-            field("LIMIT KARTU", "banknote") {
+            field("CARD LIMIT", "banknote") {
                 HStack(spacing: 10) {
                     Text("Rp").font(.headline).foregroundStyle(.glassText)
                     TextField("0", text: $limitText)
@@ -116,16 +116,16 @@ struct AddEditCreditCardView: View {
             }
 
             // Billing & Due days
-            field("SIKLUS TAGIHAN", "calendar") {
+            field("BILLING CYCLE", "calendar") {
                 HStack(spacing: 12) {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("Tanggal Siklus Mulai").font(.caption2).foregroundStyle(.dimText)
+                        Text("Cycle Start Day").font(.caption2).foregroundStyle(.dimText)
                         Stepper("\(billingDay)", value: $billingDay, in: 1...28)
                             .foregroundStyle(.white)
                             .padding(10).glassEffect(in: .rect(cornerRadius: 12))
                     }
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("Tanggal Jatuh Tempo").font(.caption2).foregroundStyle(.dimText)
+                        Text("Due Day").font(.caption2).foregroundStyle(.dimText)
                         Stepper("\(dueDay)", value: $dueDay, in: 1...28)
                             .foregroundStyle(.white)
                             .padding(10).glassEffect(in: .rect(cornerRadius: 12))
@@ -134,7 +134,7 @@ struct AddEditCreditCardView: View {
             }
 
             // Color
-            field("WARNA KARTU", "paintpalette") {
+            field("CARD COLOR", "paintpalette") {
                 HStack(spacing: 10) {
                     ForEach(CreditCard.palette.indices, id: \.self) { i in
                         Button { withAnimation { colorIndex = i } } label: {
@@ -159,7 +159,7 @@ struct AddEditCreditCardView: View {
         Button(action: save) {
             HStack(spacing: 8) {
                 Image(systemName: isEditMode ? "checkmark.circle.fill" : "plus.circle.fill")
-                Text(isEditMode ? "Simpan Perubahan" : "Tambah Kartu").fontWeight(.semibold)
+                Text(isEditMode ? "Save Changes" : "Add Card").fontWeight(.semibold)
             }
             .frame(maxWidth: .infinity).padding(.vertical, 17)
         }
@@ -215,7 +215,7 @@ struct AddCCTransactionView: View {
     @State private var category  = ""
     @State private var date      = Date()
 
-    private let cats = ["Belanja", "Makan", "Transport", "Hiburan", "Tagihan", "Travel", "Kesehatan", "Lainnya"]
+    private let cats = ["Shopping", "Food", "Transport", "Entertainment", "Bills", "Travel", "Health", "Other"]
     private var canSave: Bool {
         !descText.trimmingCharacters(in: .whitespaces).isEmpty &&
         Double(amountText.replacingOccurrences(of: ",", with: ".")) != nil
@@ -228,13 +228,13 @@ struct AddCCTransactionView: View {
                 ScrollView {
                     VStack(spacing: 20) {
                         // Description
-                        field("DESKRIPSI", "text.alignleft") {
-                            TextField("e.g. Belanja Shopee…", text: $descText)
+                        field("DESCRIPTION", "text.alignleft") {
+                            TextField("e.g. Shopee purchase…", text: $descText)
                                 .textFieldStyle(.plain).font(.body).foregroundStyle(.white)
                                 .padding(14).glassEffect(in: .rect(cornerRadius: 14))
                         }
                         // Amount
-                        field("JUMLAH (IDR)", "banknote") {
+                        field("AMOUNT (IDR)", "banknote") {
                             HStack(spacing: 10) {
                                 Text("Rp").font(.headline).foregroundStyle(.glassText)
                                 TextField("0", text: $amountText)
@@ -246,12 +246,12 @@ struct AddCCTransactionView: View {
                             .padding(14).glassEffect(in: .rect(cornerRadius: 14))
                         }
                         // Category
-                        field("KATEGORI", "tag") {
+                        field("CATEGORY", "tag") {
                             Menu {
                                 ForEach(cats, id: \.self) { c in Button(c) { category = c } }
                             } label: {
                                 HStack {
-                                    Text(category.isEmpty ? "Pilih kategori…" : category)
+                                    Text(category.isEmpty ? "Select category…" : category)
                                         .foregroundStyle(category.isEmpty ? Color(white: 0.35) : .white).font(.body)
                                     Spacer()
                                     Image(systemName: "chevron.up.chevron.down").font(.caption).foregroundStyle(.dimText)
@@ -261,7 +261,7 @@ struct AddCCTransactionView: View {
                             .buttonStyle(.plain)
                         }
                         // Date
-                        field("TANGGAL", "calendar") {
+                        field("DATE", "calendar") {
                             DatePicker("", selection: $date, displayedComponents: .date)
                                 .datePickerStyle(.compact).labelsHidden()
                                 .padding(14).glassEffect(in: .rect(cornerRadius: 14))
@@ -271,7 +271,7 @@ struct AddCCTransactionView: View {
                         Button(action: save) {
                             HStack(spacing: 8) {
                                 Image(systemName: "plus.circle.fill")
-                                Text("Tambah Transaksi").fontWeight(.semibold)
+                                Text("Add Transaction").fontWeight(.semibold)
                             }
                             .frame(maxWidth: .infinity).padding(.vertical, 17)
                         }
@@ -281,13 +281,13 @@ struct AddCCTransactionView: View {
                     .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 40)
                 }
             }
-            .navigationTitle("Transaksi Kartu Kredit")
+            .navigationTitle("Credit Card Transaction")
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Batal") { dismiss() }.foregroundStyle(.glassText)
+                    Button("Cancel") { dismiss() }.foregroundStyle(.glassText)
                 }
             }
         }

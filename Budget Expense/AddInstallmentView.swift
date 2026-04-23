@@ -46,13 +46,13 @@ struct AddInstallmentView: View {
                     .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 40)
                 }
             }
-            .navigationTitle(isEditMode ? "Edit Cicilan" : "Cicilan Baru")
+            .navigationTitle(isEditMode ? "Edit Installment" : "New Installment")
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Batal") { dismiss() }.foregroundStyle(.glassText)
+                    Button("Cancel") { dismiss() }.foregroundStyle(.glassText)
                 }
             }
             .onAppear { prefill() }
@@ -64,15 +64,15 @@ struct AddInstallmentView: View {
     private var installmentPreview: some View {
         VStack(spacing: 10) {
             HStack {
-                Text("ESTIMASI CICILAN")
+                Text("INSTALLMENT ESTIMATE")
                     .font(.caption.weight(.semibold)).foregroundStyle(.glassText).kerning(1.2)
                 Spacer()
             }
             HStack(spacing: 0) {
-                previewPill("Pokok", formatIDR(principal), Color(red: 0.3, green: 0.6, blue: 1))
-                previewPill("Bunga/bln", annualRate > 0 ? String(format: "%.2f%%", annualRate * 100 / 12) : "0%",
+                previewPill("Principal", formatIDR(principal), Color(red: 0.3, green: 0.6, blue: 1))
+                previewPill("Int/mo", annualRate > 0 ? String(format: "%.2f%%", annualRate * 100 / 12) : "0%",
                              Color(red: 0.92, green: 0.66, blue: 0.10))
-                previewPill("/bulan", formatIDR(monthly), .neonGreen)
+                previewPill("/month", formatIDR(monthly), .neonGreen)
             }
             .padding(16).glassEffect(in: .rect(cornerRadius: 16))
         }
@@ -91,13 +91,13 @@ struct AddInstallmentView: View {
 
     private var fields: some View {
         VStack(spacing: 20) {
-            field("DESKRIPSI", "text.alignleft") {
+            field("DESCRIPTION", "text.alignleft") {
                 TextField("e.g. iPhone 15, Kulkas…", text: $desc)
                     .textFieldStyle(.plain).font(.body).foregroundStyle(.white)
                     .padding(14).glassEffect(in: .rect(cornerRadius: 14))
             }
 
-            field("TOTAL PEMBELIAN", "banknote") {
+            field("TOTAL AMOUNT", "banknote") {
                 HStack(spacing: 10) {
                     Text("Rp").font(.headline).foregroundStyle(.glassText)
                     TextField("0", text: $principalText)
@@ -109,7 +109,7 @@ struct AddInstallmentView: View {
                 .padding(14).glassEffect(in: .rect(cornerRadius: 14))
             }
 
-            field("BUNGA PER TAHUN (%)", "percent") {
+            field("ANNUAL INTEREST (%)", "percent") {
                 HStack(spacing: 10) {
                     TextField("0", text: $interestText)
                         #if os(iOS)
@@ -121,7 +121,7 @@ struct AddInstallmentView: View {
                 .padding(14).glassEffect(in: .rect(cornerRadius: 14))
             }
 
-            field("JUMLAH BULAN CICILAN", "calendar.badge.clock") {
+            field("INSTALLMENT MONTHS", "calendar.badge.clock") {
                 HStack(spacing: 0) {
                     ForEach([3, 6, 12, 18, 24, 36], id: \.self) { m in
                         Button { withAnimation { months = m } } label: {
@@ -136,7 +136,7 @@ struct AddInstallmentView: View {
                 }
             }
 
-            field("MULAI CICILAN", "calendar") {
+            field("START DATE", "calendar") {
                 DatePicker("", selection: $startDate, displayedComponents: .date)
                     .datePickerStyle(.compact).labelsHidden()
                     .padding(14).glassEffect(in: .rect(cornerRadius: 14))
@@ -149,7 +149,7 @@ struct AddInstallmentView: View {
         Button(action: save) {
             HStack(spacing: 8) {
                 Image(systemName: isEditMode ? "checkmark.circle.fill" : "plus.circle.fill")
-                Text(isEditMode ? "Simpan Cicilan" : "Tambah Cicilan").fontWeight(.semibold)
+                Text(isEditMode ? "Save Installment" : "Add Installment").fontWeight(.semibold)
             }
             .frame(maxWidth: .infinity).padding(.vertical, 17)
         }

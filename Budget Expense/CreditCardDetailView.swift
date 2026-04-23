@@ -31,15 +31,15 @@ struct CreditCardDetailView: View {
                 }
             }
         }
-        .navigationTitle(card?.name ?? "Kartu Kredit")
+        .navigationTitle(card?.name ?? "Credit Card")
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Menu {
-                    Button { showAddTx   = true } label: { Label("Tambah Transaksi", systemImage: "plus.circle") }
-                    Button { showAddInst = true } label: { Label("Tambah Cicilan",   systemImage: "clock.badge.plus") }
+                    Button { showAddTx   = true } label: { Label("Add Transaction",  systemImage: "plus.circle") }
+                    Button { showAddInst = true } label: { Label("Add Installment",  systemImage: "clock.badge.plus") }
                 } label: {
                     Image(systemName: "plus").fontWeight(.semibold)
                 }
@@ -84,7 +84,7 @@ struct CreditCardDetailView: View {
                     }
                     Spacer()
                     VStack(alignment: .trailing, spacing: 2) {
-                        Text("SISA LIMIT").font(.caption2).foregroundStyle(.white.opacity(0.6))
+                        Text("REMAINING").font(.caption2).foregroundStyle(.white.opacity(0.6))
                         Text(formatIDR(card.remainingLimit))
                             .font(.subheadline.bold())
                             .foregroundStyle(card.usedPercent > 0.8 ? Color(red: 1, green: 0.5, blue: 0.5) : .white)
@@ -116,19 +116,19 @@ struct CreditCardDetailView: View {
 
         return VStack(spacing: 12) {
             HStack {
-                infoItem("Siklus", "\(df.string(from: cycleStart)) → \(df.string(from: cycleEnd))", "calendar")
+                infoItem("Cycle", "\(df.string(from: cycleStart)) → \(df.string(from: cycleEnd))", "calendar")
                 Divider().background(Color(white: 0.15)).frame(height: 30)
-                infoItem("Jatuh Tempo", df.string(from: due), "exclamationmark.circle")
+                infoItem("Due Date", df.string(from: due), "exclamationmark.circle")
             }
             Divider().background(Color(white: 0.15))
             HStack {
-                infoItem("Tagihan Siklus", formatIDR(store.currentCycleBill(for: card)), "creditcard")
+                infoItem("Cycle Bill", formatIDR(store.currentCycleBill(for: card)), "creditcard")
                 Divider().background(Color(white: 0.15)).frame(height: 30)
-                infoItem("Cicilan Bulan Ini", formatIDR(store.currentMonthInstallments(for: card)), "clock")
+                infoItem("Monthly Installment", formatIDR(store.currentMonthInstallments(for: card)), "clock")
             }
             Divider().background(Color(white: 0.15))
             HStack {
-                Text("TOTAL BAYAR BULAN INI")
+                Text("TOTAL DUE THIS MONTH")
                     .font(.caption.weight(.semibold)).foregroundStyle(.glassText)
                 Spacer()
                 Text(formatIDR(store.totalDueThisMonth(for: card)))
@@ -144,7 +144,7 @@ struct CreditCardDetailView: View {
         Button { store.payCurrentCycleBill(for: card.id) } label: {
             HStack(spacing: 8) {
                 Image(systemName: "checkmark.seal.fill")
-                Text("Tandai Sudah Dibayar").fontWeight(.semibold)
+                Text("Mark as Paid").fontWeight(.semibold)
             }
             .frame(maxWidth: .infinity).padding(.vertical, 15)
         }
@@ -158,15 +158,15 @@ struct CreditCardDetailView: View {
     private func transactionsSection(_ card: CreditCard) -> some View {
         let txs = store.currentCycleTransactions(for: card).sorted { $0.date > $1.date }
         return VStack(alignment: .leading, spacing: 10) {
-            sectionHeader("TRANSAKSI SIKLUS INI", count: txs.count)
+            sectionHeader("THIS CYCLE'S TRANSACTIONS", count: txs.count)
             if txs.isEmpty {
-                emptySection("Belum ada transaksi di siklus ini")
+                emptySection("No transactions this cycle")
             } else {
                 ForEach(txs) { tx in
                     CCTransactionRow(tx: tx)
                         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                             Button(role: .destructive) { store.deleteCCTransaction(tx.id, from: card.id) }
-                            label: { Label("Hapus", systemImage: "trash") }
+                            label: { Label("Delete", systemImage: "trash") }
                         }
                 }
             }
@@ -179,15 +179,15 @@ struct CreditCardDetailView: View {
         let active = card.installments.filter { !$0.isCompleted }
         let done   = card.installments.filter {  $0.isCompleted }
         return VStack(alignment: .leading, spacing: 10) {
-            sectionHeader("CICILAN AKTIF", count: active.count)
+            sectionHeader("ACTIVE INSTALLMENTS", count: active.count)
             if active.isEmpty {
-                emptySection("Belum ada cicilan aktif")
+                emptySection("No active installments")
             } else {
                 ForEach(active) { inst in
                     InstallmentRow(inst: inst)
                         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                             Button(role: .destructive) { store.deleteInstallment(inst.id, from: card.id) }
-                            label: { Label("Hapus", systemImage: "trash") }
+                            label: { Label("Delete", systemImage: "trash") }
                         }
                         .swipeActions(edge: .leading) {
                             Button { editInstTarget = inst }
@@ -200,7 +200,7 @@ struct CreditCardDetailView: View {
                 DisclosureGroup {
                     ForEach(done) { inst in InstallmentRow(inst: inst) }
                 } label: {
-                    Text("Cicilan Selesai (\(done.count))")
+                    Text("Completed (\(done.count))")
                         .font(.caption).foregroundStyle(.dimText)
                 }
                 .padding(14).glassEffect(in: .rect(cornerRadius: 14))
@@ -258,7 +258,7 @@ struct CCTransactionRow: View {
             VStack(alignment: .trailing, spacing: 3) {
                 Text(formatIDR(tx.amount)).font(.subheadline.weight(.semibold))
                     .foregroundStyle(tx.isPaid ? .neonGreen : .neonRed)
-                Text(tx.isPaid ? "Lunas" : "Belum Bayar")
+                Text(tx.isPaid ? "Paid" : "Unpaid")
                     .font(.caption2).foregroundStyle(tx.isPaid ? .neonGreen.opacity(0.7) : .dimText)
             }
         }
@@ -281,12 +281,12 @@ struct InstallmentRow: View {
             }
             VStack(alignment: .leading, spacing: 3) {
                 Text(inst.description).font(.subheadline.weight(.medium)).foregroundStyle(.white).lineLimit(1)
-                Text("\(inst.paidMonths)/\(inst.totalMonths) bulan · Sisa \(formatIDR(inst.remainingAmount))")
+                Text("\(inst.paidMonths)/\(inst.totalMonths) months · Left \(formatIDR(inst.remainingAmount))")
                     .font(.caption2).foregroundStyle(.glassText)
             }
             Spacer()
             VStack(alignment: .trailing, spacing: 3) {
-                Text(inst.isCompleted ? "Lunas" : "/bulan")
+                Text(inst.isCompleted ? "Paid off" : "/month")
                     .font(.caption2).foregroundStyle(.dimText)
                 if !inst.isCompleted {
                     Text(formatIDR(inst.monthlyPayment))

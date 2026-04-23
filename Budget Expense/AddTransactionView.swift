@@ -17,8 +17,8 @@ struct AddTransactionView: View {
     @State private var note       = ""
     @State private var date       = Date()
 
-    private let inflowCats  = ["Gaji", "Transfer Masuk", "Penjualan", "Refund", "Hadiah", "Lainnya"]
-    private let outflowCats = ["Makan", "Transport", "Belanja", "Tagihan", "Hiburan", "Kesehatan", "Lainnya"]
+    private let inflowCats  = ["Salary", "Transfer In", "Sales", "Refund", "Gift", "Other"]
+    private let outflowCats = ["Food", "Transport", "Shopping", "Bills", "Entertainment", "Health", "Other"]
     private var categories: [String] { txType == .inflow ? inflowCats : outflowCats }
 
     private var canSave: Bool {
@@ -41,13 +41,13 @@ struct AddTransactionView: View {
                     .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 40)
                 }
             }
-            .navigationTitle("Transaksi Baru")
+            .navigationTitle("New Transaction")
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Batal") { dismiss() }.foregroundStyle(.glassText)
+                    Button("Cancel") { dismiss() }.foregroundStyle(.glassText)
                 }
             }
         }
@@ -57,15 +57,15 @@ struct AddTransactionView: View {
 
     private var typeSelector: some View {
         HStack(spacing: 10) {
-            txTypeBtn(.inflow,  "Pemasukan", "arrow.down.circle.fill", .neonGreen)
-            txTypeBtn(.outflow, "Pengeluaran","arrow.up.circle.fill",  .neonRed)
+            txTypeBtn(.inflow,  "Inflow",  "arrow.down.circle.fill", .neonGreen)
+            txTypeBtn(.outflow, "Outflow", "arrow.up.circle.fill",   .neonRed)
         }
     }
 
     // MARK: Amount
 
     private var amountField: some View {
-        field("JUMLAH", "banknote") {
+        field("AMOUNT", "banknote") {
             HStack(spacing: 10) {
                 Text(wallet.currency.symbol).font(.headline).foregroundStyle(.glassText).frame(minWidth: 24)
                 TextField("0", text: $amountText)
@@ -81,14 +81,14 @@ struct AddTransactionView: View {
     // MARK: Category
 
     private var categoryField: some View {
-        field("KATEGORI", "tag") {
+        field("CATEGORY", "tag") {
             Menu {
                 ForEach(categories, id: \.self) { cat in
                     Button(cat) { category = cat }
                 }
             } label: {
                 HStack {
-                    Text(category.isEmpty ? "Pilih kategori…" : category)
+                    Text(category.isEmpty ? "Select category…" : category)
                         .foregroundStyle(category.isEmpty ? Color(white: 0.35) : .white)
                         .font(.body)
                     Spacer()
@@ -104,8 +104,8 @@ struct AddTransactionView: View {
     // MARK: Note
 
     private var noteField: some View {
-        field("CATATAN (opsional)", "note.text") {
-            TextField("e.g. Makan siang…", text: $note)
+        field("NOTE (optional)", "note.text") {
+            TextField("e.g. Lunch, groceries…", text: $note)
                 .textFieldStyle(.plain).font(.body).foregroundStyle(.white)
                 .padding(14).glassEffect(in: .rect(cornerRadius: 14))
         }
@@ -114,7 +114,7 @@ struct AddTransactionView: View {
     // MARK: Date
 
     private var datePicker: some View {
-        field("TANGGAL", "calendar") {
+        field("DATE", "calendar") {
             DatePicker("", selection: $date, displayedComponents: .date)
                 .datePickerStyle(.compact)
                 .labelsHidden()
@@ -129,7 +129,7 @@ struct AddTransactionView: View {
         Button(action: save) {
             HStack(spacing: 8) {
                 Image(systemName: "checkmark.circle.fill")
-                Text("Simpan Transaksi").fontWeight(.semibold)
+                Text("Save Transaction").fontWeight(.semibold)
             }
             .frame(maxWidth: .infinity).padding(.vertical, 17)
         }

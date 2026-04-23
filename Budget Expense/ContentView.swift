@@ -20,7 +20,7 @@ struct ContentView: View {
             Tab("Credit", systemImage: "creditcard.fill") {
                 CreditCardListView()
             }
-            Tab("Piutang", systemImage: "person.2.fill") {
+            Tab("Receivables", systemImage: "person.2.fill") {
                 DebtListView()
             }
         }

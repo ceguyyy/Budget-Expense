@@ -16,7 +16,7 @@ struct AddEditDebtView: View {
     @State private var isSettled = false
 
     private var isEditing: Bool { editTarget != nil }
-    private var title: String { isEditing ? "Edit Piutang" : "Tambah Piutang" }
+    private var title: String { isEditing ? "Edit Receivable" : "Add Receivable" }
 
     private var parsedAmount: Double {
         Double(amountStr.replacingOccurrences(of: ",", with: "")) ?? 0
@@ -37,8 +37,8 @@ struct AddEditDebtView: View {
                     // Form fields
                     VStack(spacing: 12) {
                         formSection {
-                            fieldRow(label: "Nama", systemImage: "person.fill") {
-                                TextField("Siapa yang utang?", text: $personName)
+                            fieldRow(label: "Name", systemImage: "person.fill") {
+                                TextField("Who owes you?", text: $personName)
                                     .foregroundStyle(.white)
                             }
                         }
@@ -46,7 +46,7 @@ struct AddEditDebtView: View {
                         formSection {
                             // Currency toggle
                             HStack {
-                                Label("Mata Uang", systemImage: "dollarsign.circle")
+                                Label("Currency", systemImage: "dollarsign.circle")
                                     .foregroundStyle(.white.opacity(0.7))
                                     .font(.subheadline)
                                 Spacer()
@@ -61,7 +61,7 @@ struct AddEditDebtView: View {
 
                             Divider().background(.white.opacity(0.15))
 
-                            fieldRow(label: "Jumlah", systemImage: "banknote") {
+                            fieldRow(label: "Amount", systemImage: "banknote") {
                                 TextField("0", text: $amountStr)
                                     .foregroundStyle(.white)
                                     .multilineTextAlignment(.trailing)
@@ -72,21 +72,21 @@ struct AddEditDebtView: View {
                         }
 
                         formSection {
-                            fieldRow(label: "Catatan", systemImage: "note.text") {
-                                TextField("Opsional", text: $note)
+                            fieldRow(label: "Note", systemImage: "note.text") {
+                                TextField("Optional", text: $note)
                                     .foregroundStyle(.white)
                             }
 
                             Divider().background(.white.opacity(0.15))
 
-                            DatePicker("Tanggal", selection: $date, displayedComponents: .date)
+                            DatePicker("Date", selection: $date, displayedComponents: .date)
                                 .foregroundStyle(.white.opacity(0.7))
                                 .font(.subheadline)
                         }
 
                         formSection {
                             Toggle(isOn: $hasDueDate) {
-                                Label("Jatuh Tempo", systemImage: "calendar.badge.exclamationmark")
+                                Label("Due Date", systemImage: "calendar.badge.exclamationmark")
                                     .foregroundStyle(.white.opacity(0.7))
                                     .font(.subheadline)
                             }
@@ -94,7 +94,7 @@ struct AddEditDebtView: View {
 
                             if hasDueDate {
                                 Divider().background(.white.opacity(0.15))
-                                DatePicker("Tanggal JT", selection: $dueDate, displayedComponents: .date)
+                                DatePicker("Due Date", selection: $dueDate, displayedComponents: .date)
                                     .foregroundStyle(.white.opacity(0.7))
                                     .font(.subheadline)
                             }
@@ -103,7 +103,7 @@ struct AddEditDebtView: View {
                         if isEditing {
                             formSection {
                                 Toggle(isOn: $isSettled) {
-                                    Label("Sudah Lunas", systemImage: "checkmark.seal.fill")
+                                    Label("Settled", systemImage: "checkmark.seal.fill")
                                         .foregroundStyle(.white.opacity(0.7))
                                         .font(.subheadline)
                                 }
@@ -122,11 +122,11 @@ struct AddEditDebtView: View {
             #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Batal") { dismiss() }
+                    Button("Cancel") { dismiss() }
                         .foregroundStyle(.white.opacity(0.7))
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Simpan") { save() }
+                    Button("Save") { save() }
                         .foregroundStyle(canSave ? Color.neonGreen : .white.opacity(0.3))
                         .disabled(!canSave)
                 }
@@ -153,11 +153,11 @@ struct AddEditDebtView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(personName.isEmpty ? "Nama Peminjam" : personName)
+                    Text(personName.isEmpty ? "Borrower's Name" : personName)
                         .font(.headline)
                         .foregroundStyle(.white)
                     if hasDueDate {
-                        Text("JT: \(dueDate.formatted(date: .abbreviated, time: .omitted))")
+                        Text("Due: \(dueDate.formatted(date: .abbreviated, time: .omitted))")
                             .font(.caption)
                             .foregroundStyle(dueDate < Date() ? Color.neonRed : .white.opacity(0.6))
                     }

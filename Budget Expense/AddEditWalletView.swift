@@ -25,7 +25,7 @@ struct AddEditWalletView: View {
         Double(balanceText.replacingOccurrences(of: ",", with: ".")) ?? 0
     }
     private var previewWallet: Wallet {
-        Wallet(name: name.isEmpty ? "Nama Wallet" : name,
+        Wallet(name: name.isEmpty ? "Wallet Name" : name,
                balance: parsedBalance, currency: currency, isPositive: isPositive)
     }
 
@@ -42,13 +42,13 @@ struct AddEditWalletView: View {
                     .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 40)
                 }
             }
-            .navigationTitle(isEditMode ? "Edit Wallet" : "Wallet Baru")
+            .navigationTitle(isEditMode ? "Edit Wallet" : "New Wallet")
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Batal") { dismiss() }.foregroundStyle(.glassText)
+                    Button("Cancel") { dismiss() }.foregroundStyle(.glassText)
                 }
             }
             .onAppear { prefill() }
@@ -70,14 +70,14 @@ struct AddEditWalletView: View {
     private var fields: some View {
         VStack(spacing: 20) {
             // Name
-            field(title: "NAMA WALLET", icon: "wallet.bifold") {
+            field(title: "WALLET NAME", icon: "wallet.bifold") {
                 TextField("e.g. BCA, GoPay, Dana…", text: $name)
                     .textFieldStyle(.plain).font(.body).foregroundStyle(.white)
                     .padding(14).glassEffect(in: .rect(cornerRadius: 14))
             }
 
             // Currency
-            field(title: "MATA UANG", icon: "globe") {
+            field(title: "CURRENCY", icon: "globe") {
                 HStack(spacing: 10) {
                     ForEach(Currency.allCases, id: \.self) { c in
                         Button { withAnimation(.spring(duration: 0.2)) { currency = c } } label: {
@@ -96,7 +96,7 @@ struct AddEditWalletView: View {
             }
 
             // Balance
-            field(title: "SALDO", icon: "banknote") {
+            field(title: "BALANCE", icon: "banknote") {
                 HStack(spacing: 10) {
                     Text(currency.symbol).font(.headline).foregroundStyle(.glassText).frame(minWidth: 24)
                     TextField("0", text: $balanceText)
@@ -109,10 +109,10 @@ struct AddEditWalletView: View {
             }
 
             // Type
-            field(title: "TIPE", icon: "plusminus") {
+            field(title: "TYPE", icon: "plusminus") {
                 HStack(spacing: 10) {
-                    typeBtn("Aset / Masuk", "arrow.up.circle.fill", true,  .neonGreen)
-                    typeBtn("Liabilitas",   "arrow.down.circle.fill", false, .neonRed)
+                    typeBtn("Asset / Inflow", "arrow.up.circle.fill", true,  .neonGreen)
+                    typeBtn("Liability",      "arrow.down.circle.fill", false, .neonRed)
                 }
             }
         }
@@ -122,7 +122,7 @@ struct AddEditWalletView: View {
         Button(action: save) {
             HStack(spacing: 8) {
                 Image(systemName: isEditMode ? "checkmark.circle.fill" : "plus.circle.fill")
-                Text(isEditMode ? "Simpan Perubahan" : "Tambah Wallet").fontWeight(.semibold)
+                Text(isEditMode ? "Save Changes" : "Add Wallet").fontWeight(.semibold)
             }
             .frame(maxWidth: .infinity).padding(.vertical, 17)
         }

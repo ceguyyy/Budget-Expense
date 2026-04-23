@@ -1,4 +1,3 @@
-
 //
 //  DashboardView.swift
 //  Budget Expense
@@ -15,7 +14,10 @@ struct DashboardView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                Color.appBg.ignoresSafeArea()
+                // ✅ Background full screen (AMAN)
+                Color.appBg
+                    .ignoresSafeArea()
+
                 ScrollView {
                     VStack(spacing: 14) {
                         netWorthCard
@@ -24,11 +26,11 @@ struct DashboardView: View {
                             cashflowChartCard
                         }
                         if !store.creditCards.isEmpty { ccSummaryCard }
-                        if store.activeDebtCount > 0 { piutangCard }
+                        if store.activeDebtCount > 0 { receivablesCard }
                     }
                     .padding(.horizontal, 16)
                     .padding(.top, 8)
-                    .padding(.bottom, 40)
+                    .padding(.bottom, 100)
                 }
             }
             .navigationTitle("Overview")
@@ -59,7 +61,7 @@ struct DashboardView: View {
 
             HStack(spacing: 0) {
                 breakdownPill("Wallets", formatIDR(max(0, store.totalDebitIDR)), .neonGreen)
-                breakdownPill("Piutang", formatIDR(store.totalReceivablesIDR), Color(red: 0.3, green: 0.6, blue: 1))
+                breakdownPill("Receivables", formatIDR(store.totalReceivablesIDR), Color(red: 0.3, green: 0.6, blue: 1))
                 breakdownPill("CC Debt", "−" + formatIDR(store.totalOutstandingCC), .neonRed)
             }
         }
@@ -67,34 +69,38 @@ struct DashboardView: View {
         .glassEffect(in: .rect(cornerRadius: 22))
     }
 
-    // MARK: Metrics Grid (2×2)
+    // MARK: Metrics Grid
 
     private var metricsGrid: some View {
-        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-            MetricTile(
-                icon: "calendar.badge.exclamationmark",
-                title: "Tagihan Bulan Ini",
-                value: formatIDR(store.totalMonthlyPayable),
-                color: .neonRed
-            )
-            MetricTile(
-                icon: "clock.badge.fill",
-                title: "Cicilan/Bulan",
-                value: formatIDR(store.totalMonthlyInstallments),
-                color: Color(red: 0.92, green: 0.66, blue: 0.10)
-            )
-            MetricTile(
-                icon: "person.2.fill",
-                title: "Piutang Aktif",
-                value: formatIDR(store.totalReceivablesIDR),
-                color: Color(red: 0.3, green: 0.6, blue: 1.0)
-            )
-            MetricTile(
-                icon: "drop.fill",
-                title: "Likuiditas",
-                value: formatIDR(store.liquidityIDR),
-                color: store.liquidityIDR >= 0 ? .neonGreen : .neonRed
-            )
+        VStack(spacing: 12) {
+            HStack(spacing: 12) {
+                MetricTile(
+                    icon: "calendar.badge.exclamationmark",
+                    title: "Monthly Bill",
+                    value: formatIDR(store.totalMonthlyPayable),
+                    color: .neonRed
+                )
+                MetricTile(
+                    icon: "clock.badge.fill",
+                    title: "Installments/Mo",
+                    value: formatIDR(store.totalMonthlyInstallments),
+                    color: Color(red: 0.92, green: 0.66, blue: 0.10)
+                )
+            }
+            HStack(spacing: 12) {
+                MetricTile(
+                    icon: "person.2.fill",
+                    title: "Receivables",
+                    value: formatIDR(store.totalReceivablesIDR),
+                    color: Color(red: 0.3, green: 0.6, blue: 1.0)
+                )
+                MetricTile(
+                    icon: "drop.fill",
+                    title: "Liquidity",
+                    value: formatIDR(store.liquidityIDR),
+                    color: store.liquidityIDR >= 0 ? .neonGreen : .neonRed
+                )
+            }
         }
     }
 
@@ -103,22 +109,22 @@ struct DashboardView: View {
     private var cashflowChartCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("CASHFLOW 6 BULAN")
+                Text("6-MONTH CASHFLOW")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.glassText)
                     .kerning(1.0)
                 Spacer()
                 HStack(spacing: 10) {
-                    legendDot(.neonGreen, "Masuk")
-                    legendDot(.neonRed,   "Keluar")
+                    legendDot(.neonGreen, "Inflow")
+                    legendDot(.neonRed,   "Outflow")
                 }
             }
 
             Chart(store.monthlyChartData) { item in
-                BarMark(x: .value("Bulan", item.month), y: .value("Keluar", item.outflow))
+                BarMark(x: .value("Month", item.month), y: .value("Outflow", item.outflow))
                     .foregroundStyle(Color.neonRed.opacity(0.75).gradient)
                     .cornerRadius(5)
-                BarMark(x: .value("Bulan", item.month), y: .value("Masuk", item.inflow))
+                BarMark(x: .value("Month", item.month), y: .value("Inflow", item.inflow))
                     .foregroundStyle(Color.neonGreen.opacity(0.65).gradient)
                     .cornerRadius(5)
             }
@@ -139,7 +145,7 @@ struct DashboardView: View {
 
     private var ccSummaryCard: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("KARTU KREDIT")
+            Text("CREDIT CARDS")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.glassText)
                 .kerning(1.0)
@@ -152,9 +158,9 @@ struct DashboardView: View {
         .glassEffect(in: .rect(cornerRadius: 20))
     }
 
-    // MARK: Piutang Summary
+    // MARK: Receivables
 
-    private var piutangCard: some View {
+    private var receivablesCard: some View {
         HStack(spacing: 14) {
             ZStack {
                 Circle().fill(Color(red: 0.3, green: 0.6, blue: 1.0).opacity(0.15)).frame(width: 44, height: 44)
@@ -163,9 +169,9 @@ struct DashboardView: View {
                     .foregroundStyle(Color(red: 0.3, green: 0.6, blue: 1.0))
             }
             VStack(alignment: .leading, spacing: 3) {
-                Text("Piutang Aktif")
+                Text("Active Receivables")
                     .font(.subheadline.weight(.semibold)).foregroundStyle(.white)
-                Text("\(store.activeDebtCount) orang · \(formatIDR(store.totalReceivablesIDR))")
+                Text("\(store.activeDebtCount) people · \(formatIDR(store.totalReceivablesIDR))")
                     .font(.caption).foregroundStyle(.glassText)
             }
             Spacer()
@@ -213,9 +219,9 @@ struct CCDashboardRow: View {
                 }
                 Spacer()
                 VStack(alignment: .trailing, spacing: 2) {
-                    Text("Tagihan: \(formatIDR(store.totalDueThisMonth(for: card)))")
+                    Text("Bill: \(formatIDR(store.totalDueThisMonth(for: card)))")
                         .font(.caption.bold()).foregroundStyle(.neonRed)
-                    Text("Sisa: \(formatIDR(card.remainingLimit))")
+                    Text("Left: \(formatIDR(card.remainingLimit))")
                         .font(.caption2).foregroundStyle(.glassText)
                 }
             }

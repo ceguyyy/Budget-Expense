@@ -16,7 +16,6 @@ struct WalletDetailView: View {
 
     var body: some View {
         ZStack {
-            Color.appBg.ignoresSafeArea()
             if let wallet {
                 ScrollView {
                     VStack(spacing: 14) {
@@ -27,6 +26,8 @@ struct WalletDetailView: View {
                 }
             }
         }
+        .ignoresSafeArea()
+        .background(Color.appBg)
         .navigationTitle(wallet?.name ?? "Wallet")
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
@@ -63,7 +64,7 @@ struct WalletDetailView: View {
                     Text(wallet.currency.rawValue)
                         .font(.caption2.bold()).padding(.horizontal, 6).padding(.vertical, 2)
                         .background(Color(white: 0.12), in: Capsule()).foregroundStyle(.glassText)
-                    Text(wallet.isPositive ? "Aset" : "Liabilitas")
+                    Text(wallet.isPositive ? "Asset" : "Liability")
                         .font(.caption2).foregroundStyle(wallet.accentColor.opacity(0.8))
                 }
             }
@@ -77,10 +78,10 @@ struct WalletDetailView: View {
     private var transactionSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text("TRANSAKSI")
+                Text("TRANSACTIONS")
                     .font(.caption.weight(.semibold)).foregroundStyle(.glassText).kerning(1.2)
                 Spacer()
-                Text("\(transactions.count) transaksi")
+                Text("\(transactions.count) transactions")
                     .font(.caption2).foregroundStyle(.dimText)
             }
             .padding(.horizontal, 4)
@@ -88,7 +89,7 @@ struct WalletDetailView: View {
             if transactions.isEmpty {
                 VStack(spacing: 12) {
                     Image(systemName: "tray").font(.system(size: 36)).foregroundStyle(Color(white: 0.25))
-                    Text("Belum ada transaksi").font(.subheadline).foregroundStyle(.glassText)
+                    Text("No transactions yet").font(.subheadline).foregroundStyle(.glassText)
                 }
                 .frame(maxWidth: .infinity).padding(40)
                 .glassEffect(in: .rect(cornerRadius: 18))
@@ -97,7 +98,7 @@ struct WalletDetailView: View {
                     TransactionRow(tx: tx, currency: wallet?.currency ?? .idr)
                         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                             Button(role: .destructive) { store.deleteTransaction(tx) }
-                            label: { Label("Hapus", systemImage: "trash") }
+                            label: { Label("Delete", systemImage: "trash") }
                         }
                 }
             }
