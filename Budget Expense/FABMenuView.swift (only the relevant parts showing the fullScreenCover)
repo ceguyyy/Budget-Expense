@@ -1,0 +1,7 @@
+        .fullScreenCover(isPresented: $showOCRScreen) {
+            OCRActionView(
+                showSplitBill: $showSplitBill,
+                showUniversalAdd: $showUniversalAdd,
+                ocrResult: $ocrResult
+            )
+        }

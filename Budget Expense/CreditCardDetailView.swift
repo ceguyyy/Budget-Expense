@@ -16,7 +16,6 @@ struct CreditCardDetailView: View {
     @State private var editInstTarget: Installment?
 
     private var card: CreditCard? { store.creditCards.first { $0.id == cardId } }
-
     var body: some View {
         ZStack {
             Color.appBg.ignoresSafeArea()

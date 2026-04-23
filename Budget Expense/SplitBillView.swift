@@ -13,6 +13,8 @@ struct SplitBillView: View {
     @Environment(\.categoryManager) private var categoryManager
     @Environment(\.dismiss) private var dismiss
     
+    let prefilledOCR: OCRResult?
+    
     // Header Data
     @State private var billDescription = ""
     @State private var category = ""
@@ -42,6 +44,17 @@ struct SplitBillView: View {
     @State private var showPayerContactPicker = false
     @State private var showAddItem = false
     
+    // Track if loaded from OCR with items (lock to itemized mode)
+    @State private var isOCRItemized = false
+    
+    // ✅ Use onAppear ID to track unique view lifecycle
+    @State private var viewLifecycleID = UUID()
+    @AppStorage("splitBill_lastLifecycleID") private var lastLifecycleID: String = ""
+    
+    init(prefilledOCR: OCRResult? = nil) {
+        self.prefilledOCR = prefilledOCR
+    }
+    
     private var categories: [String] {
         categoryManager.categoryNames(for: .outflow)
     }
@@ -64,7 +77,7 @@ struct SplitBillView: View {
     
     private var canSave: Bool {
         totalAmount > 0 &&
-        !payerName.trimmingCharacters(in: .whitespaces).isEmpty &&
+     !payerName.trimmingCharacters(in: .whitespaces).isEmpty &&
         !participants.isEmpty &&
         !billDescription.trimmingCharacters(in: .whitespaces).isEmpty
     }
@@ -159,9 +172,89 @@ struct SplitBillView: View {
             .onChange(of: items) { _, _ in redistributeAmounts() }
             .onChange(of: participants) { _, _ in redistributeAmounts() }
             .onAppear {
+                // ✅ Generate new lifecycle ID and compare with last one
+                let currentID = viewLifecycleID.uuidString
+                
+                guard lastLifecycleID != currentID else {
+                    print("⏭️ SplitBill: Skipping OCR load (view already initialized)")
+                    return
+                }
+                
+                // Mark this view as initialized
+                lastLifecycleID = currentID
+                print("🎯 SplitBill: Initializing (Lifecycle: \(currentID.prefix(8))...)...")
+                
                 if let firstWallet = store.wallets.first {
                     currency = firstWallet.currency
                 }
+                
+                // Load OCR data from parameter or UserDefaults
+                var ocrData = prefilledOCR
+                
+                if ocrData != nil {
+                    print("✅ SplitBill: Received OCR data via parameter")
+                } else if let data = UserDefaults.standard.data(forKey: "pending_ocr_result") {
+                    ocrData = try? JSONDecoder().decode(OCRResult.self, from: data)
+                    if ocrData != nil {
+                        print("✅ SplitBill: Loaded OCR data from UserDefaults")
+                    } else {
+                        print("⚠️ SplitBill: Failed to decode OCR data from UserDefaults")
+                    }
+                    // Clear it after reading
+                    UserDefaults.standard.removeObject(forKey: "pending_ocr_result")
+                } else {
+                    print("ℹ️ SplitBill: No OCR data available - starting fresh")
+                }
+                
+                if let ocr = ocrData {
+                    print("📝 SplitBill: Populating fields with OCR data:")
+                    print("   - Merchant: \(ocr.merchant ?? "nil")")
+                    print("   - Amount: \(ocr.totalAmount ?? 0)")
+                    print("   - Items: \(ocr.receiptItems?.count ?? 0)")
+                    print("   - Date: \(ocr.date?.description ?? "nil")")
+                    
+                    // Set merchant/description
+                    if let merchant = ocr.merchant {
+                        billDescription = merchant
+                    }
+                    
+                    // Set date
+                    if let ocrDate = ocr.date {
+                        date = ocrDate
+                    }
+                    
+                    // Set currency if available
+                    if let currencyCode = ocr.currency {
+                        if currencyCode.uppercased() == "USD" {
+                            currency = .usd
+                        } else {
+                            currency = .idr
+                        }
+                    }
+                    
+                    // If we have itemized receipt items, FORCE itemized mode and LOCK it
+                    if let receiptItems = ocr.receiptItems, !receiptItems.isEmpty {
+                        print("   - ✅ FORCING ITEMIZED mode with \(receiptItems.count) items (LOCKED)")
+                        splitMethod = .itemized
+                        isOCRItemized = true // Lock to itemized mode
+                        items = receiptItems.map { item in
+                            SplitItem(name: item.name, price: item.price, qty: 1, assigned: [])
+                        }
+                        print("✅ SplitBill: Items populated successfully")
+                    } else if let total = ocr.totalAmount {
+                        print("   - Using EQUAL mode with total: \(total)")
+                        // Otherwise use basic mode with total
+                        splitMethod = .equal
+                        totalAmountText = String(format: "%.2f", total)
+                    }
+                    
+                    print("✅ SplitBill: All fields populated from OCR")
+                }
+            }
+            .onDisappear {
+                // Clear the lifecycle ID when view completely disappears
+                lastLifecycleID = ""
+                print("🔄 SplitBill: Lifecycle reset on disappear")
             }
         }
     }
@@ -240,10 +333,23 @@ struct SplitBillView: View {
     
     private var splitMethodPicker: some View {
         VStack(alignment: .leading, spacing: 9) {
-            Label("SPLIT MODE", systemImage: "square.split.2x1")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.glassText)
-                .kerning(0.8)
+            HStack {
+                Label("SPLIT MODE", systemImage: "square.split.2x1")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.glassText)
+                    .kerning(0.8)
+                
+                if isOCRItemized {
+                    Spacer()
+                    HStack(spacing: 4) {
+                        Image(systemName: "lock.fill")
+                            .font(.caption2)
+                        Text("Locked to Items mode (from OCR)")
+                            .font(.caption2)
+                    }
+                    .foregroundStyle(.neonGreen.opacity(0.7))
+                }
+            }
             
             HStack(spacing: 8) {
                 splitMethodButton(.itemized, "Items", "list.bullet.rectangle")
@@ -251,6 +357,8 @@ struct SplitBillView: View {
                 splitMethodButton(.percentage, "Percent", "percent")
                 splitMethodButton(.custom, "Custom", "slider.horizontal.3")
             }
+            .disabled(isOCRItemized)
+            .opacity(isOCRItemized ? 0.5 : 1.0)
         }
     }
     
@@ -313,10 +421,15 @@ struct SplitBillView: View {
                     .glassEffect(in: .rect(cornerRadius: 14))
             } else {
                 VStack(spacing: 8) {
-                    ForEach(items) { item in
-                        ItemRow(item: item, currencySymbol: currencySymbol, participants: participants) {
-                            withAnimation { items.removeAll { $0.id == item.id } }
-                        }
+                    ForEach($items) { $item in
+                        EditableItemRow(
+                            item: $item,
+                            currencySymbol: currencySymbol,
+                            participants: participants,
+                            onDelete: {
+                                withAnimation { items.removeAll { $0.id == item.id } }
+                            }
+                        )
                     }
                 }
             }
@@ -710,6 +823,214 @@ struct ItemRow: View {
         }
         .padding(12)
         .glassEffect(in: .rect(cornerRadius: 12))
+    }
+    
+    private func formatNumber(_ value: Double) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.maximumFractionDigits = 2
+        formatter.minimumFractionDigits = 0
+        return formatter.string(from: NSNumber(value: value)) ?? "\(value)"
+    }
+}
+
+// MARK: - Editable Item Row
+
+struct EditableItemRow: View {
+    @Binding var item: SplitItem
+    let currencySymbol: String
+    let participants: [SplitParticipant]
+    let onDelete: () -> Void
+    
+    @State private var isEditing = false
+    @State private var showAssignSheet = false
+    @State private var editedName: String = ""
+    @State private var editedPrice: String = ""
+    @State private var editedQty: String = ""
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if isEditing {
+                // Editing Mode
+                VStack(spacing: 12) {
+                    // Name field
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("ITEM NAME")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.glassText)
+                        TextField("Item name", text: $editedName)
+                            .textFieldStyle(.plain)
+                            .font(.subheadline)
+                            .foregroundStyle(.white)
+                            .padding(10)
+                            .background(Color.white.opacity(0.06))
+                            .cornerRadius(8)
+                    }
+                    
+                    // Price and Quantity
+                    HStack(spacing: 12) {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("PRICE")
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(.glassText)
+                            HStack(spacing: 6) {
+                                Text(currencySymbol)
+                                    .font(.caption)
+                                    .foregroundStyle(.glassText)
+                                TextField("0.00", text: $editedPrice)
+                                    .textFieldStyle(.plain)
+                                    #if os(iOS)
+                                    .keyboardType(.decimalPad)
+                                    #endif
+                                    .font(.subheadline)
+                                    .foregroundStyle(.white)
+                            }
+                            .padding(10)
+                            .background(Color.white.opacity(0.06))
+                            .cornerRadius(8)
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("QTY")
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(.glassText)
+                            TextField("1", text: $editedQty)
+                                .textFieldStyle(.plain)
+                                #if os(iOS)
+                                .keyboardType(.numberPad)
+                                #endif
+                                .font(.subheadline)
+                                .foregroundStyle(.white)
+                                .padding(10)
+                                .background(Color.white.opacity(0.06))
+                                .cornerRadius(8)
+                        }
+                        .frame(width: 80)
+                    }
+                    
+                    // Save/Cancel buttons
+                    HStack(spacing: 8) {
+                        Button("Cancel") {
+                            isEditing = false
+                            // Reset to original values
+                            editedName = item.name
+                            editedPrice = String(format: "%.2f", item.price)
+                            editedQty = "\(item.qty)"
+                        }
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(Color.white.opacity(0.1))
+                        .cornerRadius(8)
+                        
+                        Button("Save") {
+                            // Save changes
+                            item.name = editedName
+                            if let price = Double(editedPrice.replacingOccurrences(of: ",", with: ".")) {
+                                item.price = price
+                            }
+                            if let qty = Int(editedQty), qty > 0 {
+                                item.qty = qty
+                            }
+                            isEditing = false
+                        }
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(Color.neonGreen)
+                        .cornerRadius(8)
+                    }
+                }
+                .padding(12)
+                .glassEffect(in: .rect(cornerRadius: 12))
+            } else {
+                // Display Mode
+                VStack(spacing: 0) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(item.name)
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(.white)
+                            
+                            Text("\(item.qty)x @ \(currencySymbol) \(formatNumber(item.price))")
+                                .font(.caption)
+                                .foregroundStyle(.dimText)
+                        }
+                        Spacer()
+                        Text("\(currencySymbol) \(formatNumber(item.price * Double(item.qty)))")
+                            .font(.subheadline.weight(.bold))
+                            .foregroundStyle(.white)
+                        
+                        // Assign button
+                        Button {
+                            showAssignSheet = true
+                        } label: {
+                            Image(systemName: "person.2.fill")
+                                .font(.caption)
+                                .foregroundStyle(item.assigned.isEmpty ? .neonRed : .blue)
+                                .padding(8)
+                                .background((item.assigned.isEmpty ? Color.neonRed : Color.blue).opacity(0.1))
+                                .clipShape(Circle())
+                        }
+                        
+                        // Edit button
+                        Button {
+                            editedName = item.name
+                            editedPrice = String(format: "%.2f", item.price)
+                            editedQty = "\(item.qty)"
+                            isEditing = true
+                        } label: {
+                            Image(systemName: "pencil")
+                                .font(.caption)
+                                .foregroundStyle(.neonGreen)
+                                .padding(8)
+                                .background(Color.neonGreen.opacity(0.1))
+                                .clipShape(Circle())
+                        }
+                        
+                        Button(action: onDelete) {
+                            Image(systemName: "trash.fill")
+                                .font(.caption)
+                                .foregroundStyle(.neonRed)
+                                .padding(8)
+                                .background(Color.neonRed.opacity(0.1))
+                                .clipShape(Circle())
+                        }
+                    }
+                    .padding(12)
+                    .glassEffect(in: .rect(cornerRadius: 12))
+                    
+                    // Assignment display
+                    let assignedNames = participants.filter { item.assigned.contains($0.id) }.map { $0.name }
+                    if assignedNames.isEmpty {
+                        HStack {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.caption2)
+                            Text(" Tap to assign people")
+                                .font(.caption2.bold())
+                        }
+                        .foregroundStyle(.neonRed)
+                        .padding(.horizontal, 12)
+                        .padding(.bottom, 8)
+                    } else {
+                        Text("For: " + assignedNames.joined(separator: ", "))
+                            .font(.caption2)
+                            .foregroundStyle(.glassText)
+                            .lineLimit(2)
+                            .padding(.horizontal, 12)
+                            .padding(.bottom, 8)
+                    }
+                }
+                .sheet(isPresented: $showAssignSheet) {
+                    AssignParticipantsSheet(
+                        item: $item,
+                        participants: participants
+                    )
+                }
+            }
+        }
     }
     
     private func formatNumber(_ value: Double) -> String {
@@ -1257,6 +1578,176 @@ struct SingleContactPickerView: UIViewControllerRepresentable {
     }
 }
 #endif
+
+// MARK: - Assign Participants Sheet
+
+struct AssignParticipantsSheet: View {
+    @Binding var item: SplitItem
+    let participants: [SplitParticipant]
+    @Environment(\.dismiss) private var dismiss
+    
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                Color.appBg.ignoresSafeArea()
+                
+                VStack(spacing: 20) {
+                    // Item info header
+                    VStack(spacing: 8) {
+                        Image(systemName: "fork.knife")
+                            .font(.system(size: 40))
+                            .foregroundStyle(.neonGreen)
+                        
+                        Text(item.name)
+                            .font(.title3.bold())
+                            .foregroundStyle(.white)
+                        
+                        Text("\(item.qty)x @ Rp \(formatNumber(item.price))")
+                            .font(.subheadline)
+                            .foregroundStyle(.glassText)
+                    }
+                    .padding()
+                    .frame(maxWidth: .infinity)
+                    .glassEffect(in: .rect(cornerRadius: 16))
+                    
+                    if participants.isEmpty {
+                        VStack(spacing: 12) {
+                            Image(systemName: "person.2.slash")
+                                .font(.system(size: 50))
+                                .foregroundStyle(.neonRed)
+                            
+                            Text("No Participants Yet")
+                                .font(.headline)
+                                .foregroundStyle(.white)
+                            
+                            Text("Add participants first before assigning items")
+                                .font(.subheadline)
+                                .foregroundStyle(.glassText)
+                                .multilineTextAlignment(.center)
+                        }
+                        .padding()
+                    } else {
+                        VStack(alignment: .leading, spacing: 12) {
+                            HStack {
+                                Text("WHO SHARES THIS ITEM?")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.glassText)
+                                Spacer()
+                                Text("\(item.assigned.count) selected")
+                                    .font(.caption)
+                                    .foregroundStyle(.neonGreen)
+                            }
+                            
+                            ScrollView {
+                                VStack(spacing: 8) {
+                                    ForEach(participants) { participant in
+                                        Button {
+                                            toggleAssignment(for: participant.id)
+                                        } label: {
+                                            HStack {
+                                                ZStack {
+                                                    Circle()
+                                                        .fill(Color.neonGreen.opacity(0.15))
+                                                        .frame(width: 36, height: 36)
+                                                    
+                                                    Text(participant.name.prefix(1).uppercased())
+                                                        .font(.subheadline.weight(.bold))
+                                                        .foregroundStyle(.neonGreen)
+                                                }
+                                                
+                                                Text(participant.name)
+                                                    .font(.body)
+                                                    .foregroundStyle(.white)
+                                                
+                                                Spacer()
+                                                
+                                                if item.assigned.contains(participant.id) {
+                                                    Image(systemName: "checkmark.circle.fill")
+                                                        .font(.title3)
+                                                        .foregroundStyle(.neonGreen)
+                                                } else {
+                                                    Image(systemName: "circle")
+                                                        .font(.title3)
+                                                        .foregroundStyle(.glassText)
+                                                }
+                                            }
+                                            .padding(14)
+                                            .glassEffect(in: .rect(cornerRadius: 12))
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                }
+                            }
+                            
+                            // Quick actions
+                            HStack(spacing: 12) {
+                                Button("Select All") {
+                                    item.assigned = Set(participants.map { $0.id })
+                                }
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.neonGreen)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 12)
+                                .glassEffect(in: .rect(cornerRadius: 10))
+                                
+                                Button("Clear All") {
+                                    item.assigned.removeAll()
+                                }
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.neonRed)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 12)
+                                .glassEffect(in: .rect(cornerRadius: 10))
+                            }
+                        }
+                    }
+                    
+                    Spacer()
+                    
+                    Button {
+                        dismiss()
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "checkmark.circle.fill")
+                            Text("Done")
+                                .fontWeight(.semibold)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 17)
+                    }
+                    .buttonStyle(.glassProminent)
+                }
+                .padding()
+            }
+            .navigationTitle("Assign Participants")
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                        .foregroundStyle(.glassText)
+                }
+            }
+        }
+    }
+    
+    private func toggleAssignment(for participantId: UUID) {
+        if item.assigned.contains(participantId) {
+            item.assigned.remove(participantId)
+        } else {
+            item.assigned.insert(participantId)
+        }
+    }
+    
+    private func formatNumber(_ value: Double) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.maximumFractionDigits = 2
+        formatter.minimumFractionDigits = 0
+        return formatter.string(from: NSNumber(value: value)) ?? "\(value)"
+    }
+}
 
 #Preview {
     SplitBillView()

@@ -1,0 +1,9 @@
+            // Adding/Editing Sheets
+            .sheet(isPresented: $showUniversalAdd) {
+                UniversalAddTransactionView()
+                    .environment(store)
+            }
+            .sheet(isPresented: $showSplitBill) {
+                SplitBillView()
+                    .environment(store)
+            }

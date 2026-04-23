@@ -255,19 +255,19 @@ struct SettingView: View {
                 .listRowBackground(Color(white: 0.12))
                 
                 // Split Bill Detail Button - NEW
-                Button {
-                    showSplitBillDetail = true
-                } label: {
-                    HStack {
-                        Label("Split Bill Detail", systemImage: "person.2.crop.circle.badge.plus")
-                            .foregroundStyle(.white)
-                        Spacer()
-                        Image(systemName: "chevron.right")
-                            .foregroundStyle(.gray)
-                            .font(.caption)
-                    }
-                }
-                .listRowBackground(Color(white: 0.12))
+//                Button {
+//                    showSplitBillDetail = true
+//                } label: {
+//                    HStack {
+//                        Label("Split Bill Detail", systemImage: "person.2.crop.circle.badge.plus")
+//                            .foregroundStyle(.white)
+//                        Spacer()
+//                        Image(systemName: "chevron.right")
+//                            .foregroundStyle(.gray)
+//                            .font(.caption)
+//                    }
+//                }
+//                .listRowBackground(Color(white: 0.12))
             }
             
             Section(header: Text("Data Management").foregroundStyle(.glassText)) {

@@ -50,6 +50,8 @@ struct DashboardView: View {
     @Environment(AppStore.self) private var store
     @Environment(\.appleSignInManager) private var signInManager
     
+    @State private var ocrResult: OCRResult?
+    
     // ✅ State for universal add sheet & edits
     @State private var showUniversalAdd = false
     @State private var editCCTarget: CreditCard? // For editing the card itself
@@ -95,7 +97,8 @@ struct DashboardView: View {
                     FABMenuView(
                         showUniversalAdd: $showUniversalAdd,
                         showSplitBill: $showSplitBill,
-                        showOCRScanner: $showOCRScanner
+                        showOCRScanner: $showOCRScanner,
+                        ocrResult: $ocrResult
                     )
                     .padding(.trailing, 20)
                     .padding(.bottom, 20)
@@ -104,14 +107,19 @@ struct DashboardView: View {
             .navigationBarHidden(true)
             
             // Adding/Editing Sheets
-            .sheet(isPresented: $showUniversalAdd) {
-                UniversalAddTransactionView()
+            .sheet(isPresented: $showUniversalAdd, onDismiss: {
+                ocrResult = nil
+            }) {
+                UniversalAddTransactionView(prefilledOCR: ocrResult)
                     .environment(store)
             }
-            .sheet(isPresented: $showSplitBill) {
-                SplitBillView()
+            .sheet(isPresented: $showSplitBill, onDismiss: {
+                ocrResult = nil
+            }) {
+                SplitBillView(prefilledOCR: ocrResult)
                     .environment(store)
             }
+
             .sheet(item: $editCCTarget) { card in
                 AddEditCreditCardView(editTarget: card)
                     .environment(store)
@@ -342,7 +350,7 @@ struct DashboardView: View {
                 Spacer()
                 
                 HStack {
-                    Text(signInManager.getDisplayName())
+                    Text("Christian Gunawan")
                         .font(.caption)
                         .foregroundStyle(.white.opacity(0.6))
                         .monospacedDigit()
@@ -718,7 +726,10 @@ struct MetricTile: View {
 struct UniversalAddTransactionView: View {
     @Environment(AppStore.self) private var store
     @Environment(\.categoryManager) private var categoryManager
+    @Environment(\.ocrDataManager) private var ocrManager
     @Environment(\.dismiss) private var dismiss
+    
+    let prefilledOCR: OCRResult?
 
     @State private var selectedAccountId = ""
     @State private var txType = TransactionType.outflow
@@ -726,6 +737,10 @@ struct UniversalAddTransactionView: View {
     @State private var category = ""
     @State private var note = ""
     @State private var date = Date()
+
+    init(prefilledOCR: OCRResult? = nil) {
+        self.prefilledOCR = prefilledOCR
+    }
 
     private var isCC: Bool { selectedAccountId.hasPrefix("C-") }
     
@@ -774,11 +789,63 @@ struct UniversalAddTransactionView: View {
                     Button("Cancel") { dismiss() }.foregroundStyle(.glassText)
                 }
             }
-            .onAppear {
+            .task {
+                // ✅ Use .task instead of .onAppear - runs only once per view instance
+                print("🎯 UniversalAdd: Initializing...")
+                
+                // Set default account
                 if let firstWallet = store.wallets.first {
                     selectedAccountId = "W-\(firstWallet.id)"
                 } else if let firstCC = store.creditCards.first {
                     selectedAccountId = "C-\(firstCC.id)"
+                }
+                
+                // Try to load OCR data from multiple sources (priority order)
+                var ocrData: OCRResult?
+                
+                // 1. Try from parameter (highest priority)
+                if let prefilled = prefilledOCR {
+                    ocrData = prefilled
+                    print("✅ UniversalAdd: Using OCR data from parameter")
+                }
+                // 2. Try from OCRDataManager
+                else if let managerData = ocrManager.consumePendingResult() {
+                    ocrData = managerData
+                    print("✅ UniversalAdd: Using OCR data from OCRDataManager")
+                }
+                // 3. Fallback to UserDefaults (for backward compatibility)
+                else if let data = UserDefaults.standard.data(forKey: "pending_ocr_result"),
+                        let decodedData = try? JSONDecoder().decode(OCRResult.self, from: data) {
+                    ocrData = decodedData
+                    UserDefaults.standard.removeObject(forKey: "pending_ocr_result")
+                    print("✅ UniversalAdd: Using OCR data from UserDefaults (fallback)")
+                }
+                else {
+                    print("ℹ️ UniversalAdd: No OCR data available - starting fresh")
+                }
+                
+                // Populate fields if we have OCR data
+                if let ocr = ocrData {
+                    print("📝 UniversalAdd: Populating fields with OCR data:")
+                    print("   - Merchant: \(ocr.merchant ?? "nil")")
+                    print("   - Amount: \(ocr.totalAmount ?? 0)")
+                    print("   - Date: \(ocr.date?.description ?? "nil")")
+                    print("   - Items: \(ocr.receiptItems?.count ?? 0)")
+                    
+                    if let total = ocr.totalAmount {
+                        amountText = String(format: "%.2f", total)
+                    }
+                    if let ocrDate = ocr.date {
+                        date = ocrDate
+                    }
+                    if let merchant = ocr.merchant {
+                        note = merchant
+                    }
+                    
+                    print("✅ UniversalAdd: Fields populated successfully")
+                    print("   - amountText: '\(amountText)'")
+                    print("   - note: '\(note)'")
+                    print("   - date: \(date)")
                 }
             }
         }
@@ -997,6 +1064,8 @@ struct SplitBillHistoryView: View {
     }
 }
 
+// ... existing SplitBillHistoryView stays the same above ...
+
 struct SplitBillDetailView: View {
     let record: SplitBillRecord
     
@@ -1092,11 +1161,198 @@ struct SplitBillDetailView: View {
                             .glassEffect(in: .rect(cornerRadius: 16))
                         }
                     }
+                    
+                    // Share Button inside the scroll view content
+                    Button {
+                        shareAsPDF()
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "square.and.arrow.up")
+                            Text("Share as PDF")
+                                .fontWeight(.semibold)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 15)
+                    }
+                    .buttonStyle(.glassProminent)
+                    .padding(.horizontal, 16)
                 }
                 .padding()
             }
         }
         .navigationTitle("Details")
+        #if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
+        #endif
+    }
+    
+    // MARK: - PDF Generation & Sharing
+    
+    private func shareAsPDF() {
+        let pdfData = generatePDF()
+        
+        let fileName = "\(record.billName.replacingOccurrences(of: " ", with: "_")).pdf"
+        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
+        
+        do {
+            try pdfData.write(to: tempURL)
+            
+            // Present share sheet directly from the root view controller
+            if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+               let rootVC = windowScene.windows.first?.rootViewController {
+                
+                let activityVC = UIActivityViewController(activityItems: [tempURL], applicationActivities: nil)
+                
+                // On iPad, present as popover
+                if let popover = activityVC.popoverPresentationController {
+                    popover.sourceView = rootVC.view
+                    popover.sourceRect = CGRect(x: rootVC.view.bounds.midX, y: rootVC.view.bounds.midY, width: 0, height: 0)
+                    popover.permittedArrowDirections = []
+                }
+                
+                rootVC.present(activityVC, animated: true)
+            }
+        } catch {
+            print("❌ Failed to save PDF: \(error)")
+        }
+    }
+    
+    private func generatePDF() -> Data {
+        let pageWidth: CGFloat = 612   // US Letter width
+        let pageHeight: CGFloat = 792  // US Letter height
+        let margin: CGFloat = 48
+        
+        let renderer = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: pageWidth, height: pageHeight))
+        
+        return renderer.pdfData { ctx in
+            ctx.beginPage()
+            
+            let titleFont = UIFont.boldSystemFont(ofSize: 22)
+            let sectionFont = UIFont.boldSystemFont(ofSize: 16)
+            let bodyFont = UIFont.systemFont(ofSize: 13)
+            let amountFont = UIFont.boldSystemFont(ofSize: 13)
+            let smallFont = UIFont.systemFont(ofSize: 10)
+            
+            var y: CGFloat = margin
+            
+            // ── Title ──
+            let title = record.billName
+            title.draw(at: CGPoint(x: margin, y: y), withAttributes: [
+                .font: titleFont, .foregroundColor: UIColor.black
+            ])
+            y += title.size(withAttributes: [.font: titleFont]).height + 8
+            
+            // ── Date ──
+            let dateStr = "Date: \(record.date.formatted(date: .long, time: .omitted))"
+            dateStr.draw(at: CGPoint(x: margin, y: y), withAttributes: [
+                .font: smallFont, .foregroundColor: UIColor.gray
+            ])
+            y += 32
+            
+            // ── Separator ──
+            ctx.cgContext.setStrokeColor(UIColor.lightGray.cgColor)
+            ctx.cgContext.setLineWidth(0.5)
+            ctx.cgContext.move(to: CGPoint(x: margin, y: y))
+            ctx.cgContext.addLine(to: CGPoint(x: pageWidth - margin, y: y))
+            ctx.cgContext.strokePath()
+            y += 16
+            
+            // ── Total Amount ──
+            let totalLabel = "Total Amount"
+            totalLabel.draw(at: CGPoint(x: margin, y: y), withAttributes: [
+                .font: bodyFont, .foregroundColor: UIColor.darkGray
+            ])
+            let totalValue = "\(record.currency.symbol) \(formatNumber(record.totalAmount))"
+            let totalW = totalValue.size(withAttributes: [.font: amountFont]).width
+            totalValue.draw(at: CGPoint(x: pageWidth - margin - totalW, y: y), withAttributes: [
+                .font: amountFont, .foregroundColor: UIColor.systemBlue
+            ])
+            y += 22
+            
+            // ── Paid By ──
+            let paidStr = "Paid By: \(record.payerName)"
+            paidStr.draw(at: CGPoint(x: margin, y: y), withAttributes: [
+                .font: bodyFont, .foregroundColor: UIColor.black
+            ])
+            y += 40
+            
+            // ── Participants Section ──
+            let partLabel = "Participants (\(record.participants.count))"
+            partLabel.draw(at: CGPoint(x: margin, y: y), withAttributes: [
+                .font: sectionFont, .foregroundColor: UIColor.black
+            ])
+            y += 28
+            
+            for p in record.participants {
+                let name = p.name
+                let amount = "\(record.currency.symbol) \(formatNumber(p.amount))"
+                let amountW = amount.size(withAttributes: [.font: amountFont]).width
+                
+                name.draw(at: CGPoint(x: margin + 8, y: y), withAttributes: [
+                    .font: bodyFont, .foregroundColor: UIColor.black
+                ])
+                amount.draw(at: CGPoint(x: pageWidth - margin - amountW, y: y), withAttributes: [
+                    .font: amountFont, .foregroundColor: UIColor.systemBlue
+                ])
+                
+                y += 22
+                
+                if p.id != record.participants.last?.id {
+                    ctx.cgContext.setStrokeColor(UIColor(white: 0.85, alpha: 1.0).cgColor)
+                    ctx.cgContext.move(to: CGPoint(x: margin + 8, y: y - 8))
+                    ctx.cgContext.addLine(to: CGPoint(x: pageWidth - margin, y: y - 8))
+                    ctx.cgContext.strokePath()
+                }
+            }
+            
+            y += 36
+            
+            // ── Items Section ──
+            if !record.items.isEmpty {
+                let itemLabel = "Receipt Items (\(record.items.count))"
+                itemLabel.draw(at: CGPoint(x: margin, y: y), withAttributes: [
+                    .font: sectionFont, .foregroundColor: UIColor.black
+                ])
+                y += 28
+                
+                for item in record.items {
+                    let itemTotal = item.price * Double(item.qty)
+                    let itemName = item.name
+                    let qtyStr = "\(item.qty)x @ \(record.currency.symbol) \(formatNumber(item.price))"
+                    let totalStr = "\(record.currency.symbol) \(formatNumber(itemTotal))"
+                    let totalW = totalStr.size(withAttributes: [.font: bodyFont]).width
+                    
+                    itemName.draw(at: CGPoint(x: margin + 8, y: y), withAttributes: [
+                        .font: bodyFont, .foregroundColor: UIColor.black
+                    ])
+                    y += 18
+                    
+                    qtyStr.draw(at: CGPoint(x: margin + 8, y: y), withAttributes: [
+                        .font: smallFont, .foregroundColor: UIColor.gray
+                    ])
+                    
+                    totalStr.draw(at: CGPoint(x: pageWidth - margin - totalW, y: y), withAttributes: [
+                        .font: bodyFont, .foregroundColor: UIColor.black
+                    ])
+                    
+                    y += 24
+                    
+                    if item.id != record.items.last?.id {
+                        ctx.cgContext.setStrokeColor(UIColor(white: 0.85, alpha: 1.0).cgColor)
+                        ctx.cgContext.move(to: CGPoint(x: margin + 8, y: y - 6))
+                        ctx.cgContext.addLine(to: CGPoint(x: pageWidth - margin, y: y - 6))
+                        ctx.cgContext.strokePath()
+                    }
+                }
+            }
+            
+            // ── Footer ──
+            let footer = "Generated by Duit Gw Woi Alias DGW Anjay App"
+            let footerW = footer.size(withAttributes: [.font: smallFont]).width
+            footer.draw(at: CGPoint(x: (pageWidth - footerW) / 2, y: pageHeight - 36), withAttributes: [
+                .font: smallFont, .foregroundColor: UIColor.gray
+            ])
+        }
     }
     
     private func formatNumber(_ value: Double) -> String {
@@ -1106,4 +1362,5 @@ struct SplitBillDetailView: View {
         return formatter.string(from: NSNumber(value: value)) ?? "\(value)"
     }
 }
+
 

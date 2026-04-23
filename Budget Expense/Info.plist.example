@@ -12,7 +12,12 @@
     <key>NSFaceIDUsageDescription</key>
     <string>We need Face ID to securely unlock your Budget Expense app</string>
     
-    <!-- 
+    <key>NSPhotoLibraryUsageDescription</key>
+    <string>We need access to your photo library to select receipt images for OCR scanning.</string>
+
+    <key>NSCameraUsageDescription</key>
+    <string>We need access to your camera to take photos of receipts for OCR scanning.</string>
+    <!--
     You can customize the message above to better suit your app.
     Examples:
     - "Unlock Budget Expense quickly and securely with Face ID"
@@ -27,5 +32,7 @@
     <array>
         <string>CloudKit</string>
     </array>
+    
+    
 </dict>
 </plist>

@@ -5,50 +5,49 @@
 
 import SwiftUI
 
-/// FAB Menu with expandable options for Add Expense, OCR (future), and Split Bill
+/// FAB Menu with expandable options for Add Expense, OCR, and Split Bill
 struct FABMenuView: View {
     @Binding var showUniversalAdd: Bool
     @Binding var showSplitBill: Bool
     @Binding var showOCRScanner: Bool
+    @Binding var ocrResult: OCRResult?
     
     @State private var isExpanded = false
+    @State private var showOCRScreen = false
     
     var body: some View {
         VStack(alignment: .trailing, spacing: 16) {
-            // Expanded menu options
             if isExpanded {
                 VStack(alignment: .trailing, spacing: 12) {
-                    // Split Bill
                     FABMenuItem(
                         icon: "person.2.fill",
                         label: "Split Bill",
                         color: Color(red: 0.3, green: 0.6, blue: 1.0)
                     ) {
                         isExpanded = false
-                        // Small delay to let menu close before opening sheet
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
                             showSplitBill = true
                         }
                     }
                     
-                    // OCR Expense (Future - disabled)
                     FABMenuItem(
                         icon: "doc.text.viewfinder",
                         label: "OCR Expense",
                         color: Color(red: 0.92, green: 0.66, blue: 0.10),
-                        isDisabled: true
+                        isDisabled: false
                     ) {
-                        // Future implementation
+                        isExpanded = false
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                            showOCRScreen = true
+                        }
                     }
                     
-                    // Add Expense
                     FABMenuItem(
                         icon: "plus.circle.fill",
                         label: "Add Expense",
                         color: .neonGreen
                     ) {
                         isExpanded = false
-                        // Small delay to let menu close before opening sheet
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
                             showUniversalAdd = true
                         }
@@ -57,7 +56,6 @@ struct FABMenuView: View {
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
             
-            // Main FAB Button
             Button {
                 withAnimation(.spring(duration: 0.3, bounce: 0.4)) {
                     isExpanded.toggle()
@@ -77,14 +75,46 @@ struct FABMenuView: View {
             }
             .buttonStyle(.plain)
         }
-        .sheet(isPresented: $showSplitBill) {
-            SplitBillView()
+        .fullScreenCover(isPresented: $showOCRScreen) {
+            OCRActionView(
+                showSplitBill: $showSplitBill,
+                showUniversalAdd: $showUniversalAdd,
+                ocrResult: $ocrResult
+            )
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+        .onChange(of: showUniversalAdd) { _, newValue in
+            print("🔶 FABMenuView: showUniversalAdd changed to: \(newValue)")
+            if newValue, let result = ocrResult {
+                print("🔶 FABMenuView: Saving OCR data to UserDefaults")
+                print("   - Merchant: \(result.merchant ?? "nil")")
+                print("   - Amount: \(result.totalAmount ?? 0)")
+                if let encoded = try? JSONEncoder().encode(result) {
+                    UserDefaults.standard.set(encoded, forKey: "pending_ocr_result")
+                    print("🔶 FABMenuView: ✅ Successfully saved to UserDefaults")
+                }
+            } else if newValue {
+                print("🔶 FABMenuView: ⚠️ ocrResult is NIL, nothing to save")
+            }
+        }
+        .onChange(of: showSplitBill) { _, newValue in
+            print("🟠 FABMenuView: showSplitBill changed to: \(newValue)")
+            if newValue, let result = ocrResult {
+                print("🟠 FABMenuView: Saving OCR data to UserDefaults")
+                print("   - Merchant: \(result.merchant ?? "nil")")
+                print("   - Amount: \(result.totalAmount ?? 0)")
+                print("   - Items: \(result.receiptItems?.count ?? 0)")
+                if let encoded = try? JSONEncoder().encode(result) {
+                    UserDefaults.standard.set(encoded, forKey: "pending_ocr_result")
+                    print("🟠 FABMenuView: ✅ Successfully saved to UserDefaults")
+                }
+            } else if newValue {
+                print("🟠 FABMenuView: ⚠️ ocrResult is NIL, nothing to save")
+            }
+        }
     }
 }
 
-/// Individual FAB Menu Item
+// Individual FAB Menu Item
 struct FABMenuItem: View {
     let icon: String
     let label: String
@@ -137,7 +167,8 @@ struct FABMenuItem: View {
                 FABMenuView(
                     showUniversalAdd: .constant(false),
                     showSplitBill: .constant(false),
-                    showOCRScanner: .constant(false)
+                    showOCRScanner: .constant(false),
+                    ocrResult: .constant(nil)
                 )
                 .padding(.trailing, 20)
                 .padding(.bottom, 20)
