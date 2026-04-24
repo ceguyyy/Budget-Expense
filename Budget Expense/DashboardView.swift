@@ -68,6 +68,7 @@ struct DashboardView: View {
     @State private var currentCardIndex = 0
     @AppStorage("showBalances") private var showBalances: Bool = true
     @State private var selectedChartRange: ChartRange = .last6Months
+    @State private var viewModel: DashboardViewModel?
     
     // ✅ AppStorage for dynamically updated USD -> IDR exchange rate
     @AppStorage("usdToIdrRate") private var usdToIdrRate: Double = 16200.0
@@ -146,6 +147,14 @@ struct DashboardView: View {
             
             .task {
                 await fetchExchangeRateIfNeeded()
+                if let vm = viewModel {
+                    await vm.fetchExchangeRateIfNeeded()
+                }
+            }
+            .onAppear {
+                if viewModel == nil {
+                    viewModel = DashboardViewModel(store: store)
+                }
             }
         }
     }
@@ -762,209 +771,188 @@ struct DashboardView: View {
     // MARK: - Financial Indicators
     
     private var financialIndicators: some View {
-        VStack(spacing: 16) {
-            // Section Header with Icon
-            HStack(spacing: 10) {
-                ZStack {
-                    Circle()
-                        .fill(healthScoreColor.opacity(0.15))
-                        .frame(width: 36, height: 36)
-                    
-                    Image(systemName: "chart.line.uptrend.xyaxis")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(healthScoreColor)
-                }
-                
-                Text("Financial Health")
-                    .font(.title3.bold())
-                    .foregroundStyle(.white)
-                
-                Spacer()
-                
-                // Optional Info Badge
-                Image(systemName: "info.circle")
-                    .font(.subheadline)
-                    .foregroundStyle(.white.opacity(0.5))
-            }
-            .padding(.horizontal, 16)
-            
-            // Financial Health Score - Enhanced
-            VStack(spacing: 0) {
-                // Header
-                HStack {
+        Group {
+            if let vm = viewModel {
+                VStack(spacing: 16) {
+                    // Section Header with Icon
                     HStack(spacing: 10) {
                         ZStack {
                             Circle()
-                                .fill(healthScoreColor.opacity(0.2))
-                                .frame(width: 50, height: 50)
+                                .fill(vm.healthScoreColor.opacity(0.15))
+                                .frame(width: 36, height: 36)
                             
-                            Image(systemName: "heart.circle.fill")
-                                .font(.title2)
-                                .foregroundStyle(healthScoreColor)
+                            Image(systemName: "chart.line.uptrend.xyaxis")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundStyle(vm.healthScoreColor)
                         }
                         
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Financial Health Score")
-                                .font(.headline)
-                                .foregroundStyle(.white)
-                            
-                            Text("Based on 4 key metrics")
-                                .font(.caption2)
-                                .foregroundStyle(.white.opacity(0.6))
+                        Text("Financial Health")
+                            .font(.title3.bold())
+                            .foregroundStyle(.white)
+                        
+                        Spacer()
+                        
+                        Button {
+                            vm.showHealthExplanation = true
+                        } label: {
+                            Image(systemName: "info.circle.fill")
+                                .font(.title3)
+                                .foregroundStyle(vm.healthScoreColor.opacity(0.8))
+                        }
+                        .sheet(isPresented: Binding(get: { vm.showHealthExplanation }, set: { vm.showHealthExplanation = $0 })) {
+                            FinancialHealthExplanationSheet(vm: vm)
+                                .presentationDetents([.medium, .large])
                         }
                     }
+                    .padding(.horizontal, 16)
                     
-                    Spacer()
-                    
-                    VStack(alignment: .trailing, spacing: 4) {
-                        Text("\(financialHealthScore)")
-                            .font(.system(size: 40, weight: .bold, design: .rounded))
-                            .foregroundStyle(healthScoreColor)
-                        
-                        Text(healthScoreText)
-                            .font(.caption.bold())
-                            .foregroundStyle(healthScoreColor.opacity(0.9))
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 3)
-                            .background(healthScoreColor.opacity(0.15), in: Capsule())
-                    }
-                }
-                .padding(.horizontal, 20)
-                .padding(.top, 20)
-                .padding(.bottom, 16)
-                
-                // Enhanced Progress Bar
-                VStack(spacing: 8) {
-                    GeometryReader { geo in
-                        ZStack(alignment: .leading) {
-                            // Background track
-                            RoundedRectangle(cornerRadius: 10)
-                                .fill(Color(white: 0.12))
-                                .frame(height: 16)
+                    // Financial Health Score - Enhanced
+                    VStack(spacing: 0) {
+                        // Header
+                        HStack {
+                            HStack(spacing: 10) {
+                                ZStack {
+                                    Circle()
+                                        .fill(vm.healthScoreColor.opacity(0.2))
+                                        .frame(width: 50, height: 50)
+                                    
+                                    Image(systemName: "heart.circle.fill")
+                                        .font(.title2)
+                                        .foregroundStyle(vm.healthScoreColor)
+                                }
+                                
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("Financial Health Score")
+                                        .font(.headline)
+                                        .foregroundStyle(.white)
+                                    
+                                    Text("Based on 4 key metrics")
+                                        .font(.caption2)
+                                        .foregroundStyle(.white.opacity(0.6))
+                                }
+                            }
                             
-                            // Filled progress
-                            RoundedRectangle(cornerRadius: 10)
-                                .fill(
-                                    LinearGradient(
-                                        colors: [healthScoreColor, healthScoreColor.opacity(0.7)],
-                                        startPoint: .leading,
-                                        endPoint: .trailing
-                                    )
-                                )
-                                .frame(width: geo.size.width * CGFloat(financialHealthScore) / 100, height: 16)
-                                .overlay(
+                            Spacer()
+                            
+                            VStack(alignment: .trailing, spacing: 4) {
+                                Text("\(vm.financialHealthScore)")
+                                    .font(.system(size: 40, weight: .bold, design: .rounded))
+                                    .foregroundStyle(vm.healthScoreColor)
+                                
+                                Text(vm.healthScoreText)
+                                    .font(.caption.bold())
+                                    .foregroundStyle(vm.healthScoreColor.opacity(0.9))
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 3)
+                                    .background(vm.healthScoreColor.opacity(0.15), in: Capsule())
+                            }
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.top, 20)
+                        .padding(.bottom, 16)
+                        
+                        // Enhanced Progress Bar
+                        VStack(spacing: 8) {
+                            GeometryReader { geo in
+                                ZStack(alignment: .leading) {
+                                    RoundedRectangle(cornerRadius: 10)
+                                        .fill(Color(white: 0.12))
+                                        .frame(height: 16)
+                                    
                                     RoundedRectangle(cornerRadius: 10)
                                         .fill(
                                             LinearGradient(
-                                                colors: [.white.opacity(0.3), .clear],
-                                                startPoint: .top,
-                                                endPoint: .bottom
+                                                colors: [vm.healthScoreColor, vm.healthScoreColor.opacity(0.7)],
+                                                startPoint: .leading,
+                                                endPoint: .trailing
                                             )
                                         )
-                                )
-                                .shadow(color: healthScoreColor.opacity(0.4), radius: 4, x: 0, y: 2)
-                        }
-                    }
-                    .frame(height: 16)
-                    
-                    // Progress markers
-                    HStack {
-                        ForEach([("0", 0), ("25", 25), ("50", 50), ("75", 75), ("100", 100)], id: \.1) { marker in
-                            if marker.1 == 0 {
-                                Text(marker.0)
-                                    .font(.system(size: 9, weight: .medium))
-                                    .foregroundStyle(.white.opacity(0.4))
-                            } else {
-                                Spacer()
-                                Text(marker.0)
-                                    .font(.system(size: 9, weight: .medium))
-                                    .foregroundStyle(.white.opacity(0.4))
+                                        .frame(width: geo.size.width * CGFloat(vm.financialHealthScore) / 100, height: 16)
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 10)
+                                                .fill(
+                                                    LinearGradient(
+                                                        colors: [.white.opacity(0.3), .clear],
+                                                        startPoint: .top,
+                                                        endPoint: .bottom
+                                                    )
+                                                )
+                                        )
+                                        .shadow(color: vm.healthScoreColor.opacity(0.4), radius: 4, x: 0, y: 2)
+                                }
+                            }
+                            .frame(height: 16)
+                            
+                            HStack {
+                                ForEach([("0", 0), ("25", 25), ("50", 50), ("75", 75), ("100", 100)], id: \.1) { marker in
+                                    if marker.1 == 0 {
+                                        Text(marker.0).font(.system(size: 9, weight: .medium)).foregroundStyle(.white.opacity(0.4))
+                                    } else {
+                                        Spacer()
+                                        Text(marker.0).font(.system(size: 9, weight: .medium)).foregroundStyle(.white.opacity(0.4))
+                                    }
+                                }
                             }
                         }
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 20)
                     }
-                }
-                .padding(.horizontal, 20)
-                .padding(.bottom, 20)
-            }
-            .background(
-                ZStack {
-                    LinearGradient(
-                        colors: [
-                            healthScoreColor.opacity(0.08),
-                            Color(white: 0.08)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
+                    .background(
+                        ZStack {
+                            LinearGradient(colors: [vm.healthScoreColor.opacity(0.08), Color(white: 0.08)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                            GeometryReader { geo in
+                                Circle().fill(vm.healthScoreColor.opacity(0.05)).frame(width: 120, height: 120).offset(x: geo.size.width - 60, y: -30)
+                            }
+                        }
                     )
+                    .clipShape(RoundedRectangle(cornerRadius: 20))
+                    .overlay(RoundedRectangle(cornerRadius: 20).stroke(LinearGradient(colors: [vm.healthScoreColor.opacity(0.3), vm.healthScoreColor.opacity(0.1)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1.5))
+                    .padding(.horizontal, 16)
                     
-                    // Decorative circles
-                    GeometryReader { geo in
-                        Circle()
-                            .fill(healthScoreColor.opacity(0.05))
-                            .frame(width: 120, height: 120)
-                            .offset(x: geo.size.width - 60, y: -30)
+                    // Key Metrics Row - Enhanced
+                    HStack(spacing: 12) {
+                        enhancedMetricCard(
+                            title: "Debt Ratio",
+                            value: String(format: "%.1f%%", vm.debtToAssetRatio),
+                            icon: "chart.pie.fill",
+                            color: vm.debtToAssetRatio < 30 ? .neonGreen : vm.debtToAssetRatio < 50 ? .yellow : .neonRed,
+                            subtitle: vm.debtToAssetRatio < 30 ? "Healthy" : vm.debtToAssetRatio < 50 ? "Moderate" : "High",
+                            gradient: vm.debtToAssetRatio < 30 
+                                ? [Color(red: 0.05, green: 0.4, blue: 0.3), Color(red: 0.02, green: 0.2, blue: 0.15)]
+                                : vm.debtToAssetRatio < 50
+                                ? [Color(red: 0.6, green: 0.5, blue: 0.05), Color(red: 0.3, green: 0.25, blue: 0.02)]
+                                : [Color(red: 0.4, green: 0.1, blue: 0.1), Color(red: 0.2, green: 0.05, blue: 0.05)]
+                        )
+                        
+                        enhancedMetricCard(
+                            title: "Liquidity",
+                            value: String(format: "%.2fx", vm.liquidityRatio),
+                            icon: "drop.fill",
+                            color: vm.liquidityRatio > 2 ? .neonGreen : vm.liquidityRatio > 1 ? .yellow : .neonRed,
+                            subtitle: vm.liquidityRatio > 2 ? "Strong" : vm.liquidityRatio > 1 ? "Adequate" : "Low",
+                            gradient: vm.liquidityRatio > 2
+                                ? [Color(red: 0.05, green: 0.4, blue: 0.3), Color(red: 0.02, green: 0.2, blue: 0.15)]
+                                : vm.liquidityRatio > 1
+                                ? [Color(red: 0.6, green: 0.5, blue: 0.05), Color(red: 0.3, green: 0.25, blue: 0.02)]
+                                : [Color(red: 0.4, green: 0.1, blue: 0.1), Color(red: 0.2, green: 0.05, blue: 0.05)]
+                        )
                     }
-                }
-            )
-            .clipShape(RoundedRectangle(cornerRadius: 20))
-            .overlay(
-                RoundedRectangle(cornerRadius: 20)
-                    .stroke(
-                        LinearGradient(
-                            colors: [healthScoreColor.opacity(0.3), healthScoreColor.opacity(0.1)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        lineWidth: 1.5
-                    )
-            )
-            .shadow(color: Color.black.opacity(0.15), radius: 15, x: 0, y: 5)
-            .shadow(color: healthScoreColor.opacity(0.15), radius: 10, x: 0, y: 5)
-            .padding(.horizontal, 16)
-            
-            // Key Metrics Row - Enhanced
-            HStack(spacing: 12) {
-                enhancedMetricCard(
-                    title: "Debt Ratio",
-                    value: String(format: "%.1f%%", debtToAssetRatio),
-                    icon: "chart.pie.fill",
-                    color: debtToAssetRatio < 30 ? .neonGreen : debtToAssetRatio < 50 ? .yellow : .neonRed,
-                    subtitle: debtToAssetRatio < 30 ? "Healthy" : debtToAssetRatio < 50 ? "Moderate" : "High",
-                    gradient: debtToAssetRatio < 30 
-                        ? [Color(red: 0.05, green: 0.4, blue: 0.3), Color(red: 0.02, green: 0.2, blue: 0.15)]
-                        : debtToAssetRatio < 50
-                        ? [Color(red: 0.6, green: 0.5, blue: 0.05), Color(red: 0.3, green: 0.25, blue: 0.02)]
-                        : [Color(red: 0.4, green: 0.1, blue: 0.1), Color(red: 0.2, green: 0.05, blue: 0.05)]
-                )
-                
-                enhancedMetricCard(
-                    title: "Liquidity",
-                    value: String(format: "%.2fx", liquidityRatio),
-                    icon: "drop.fill",
-                    color: liquidityRatio > 2 ? .neonGreen : liquidityRatio > 1 ? .yellow : .neonRed,
-                    subtitle: liquidityRatio > 2 ? "Strong" : liquidityRatio > 1 ? "Adequate" : "Low",
-                    gradient: liquidityRatio > 2
-                        ? [Color(red: 0.05, green: 0.4, blue: 0.3), Color(red: 0.02, green: 0.2, blue: 0.15)]
-                        : liquidityRatio > 1
-                        ? [Color(red: 0.6, green: 0.5, blue: 0.05), Color(red: 0.3, green: 0.25, blue: 0.02)]
-                        : [Color(red: 0.4, green: 0.1, blue: 0.1), Color(red: 0.2, green: 0.05, blue: 0.05)]
-                )
-            }
-            .padding(.horizontal, 16)
-            
-            // Credit Card Indicators Section
-            if !store.creditCards.isEmpty {
-                creditCardOverview
-                cardUtilizationBreakdown
-            }
-            
-            // Portfolio Distribution
-            if totalAssets + totalLiabilitiesFromWallets > 0 {
-                portfolioDistribution
-            }
-        }
-    }
-    
+                    .padding(.horizontal, 16)
+                    
+                    // Credit Card Indicators Section
+                    if !store.creditCards.isEmpty {
+                        creditCardOverview
+                        cardUtilizationBreakdown
+                    }
+                    
+                    // Portfolio Distribution
+                    if vm.totalAssets + vm.totalLiabilitiesFromWallets > 0 {
+                        portfolioDistribution
+                    }
+                    }
+                    }
+                    }
+                    }
     private func enhancedMetricCard(title: String, value: String, icon: String, color: Color, subtitle: String, gradient: [Color]) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             // Icon
@@ -2442,6 +2430,156 @@ struct UniversalAddTransactionView: View {
 }
 
 // MARK: - History Views Added for Dashboard
+
+struct FinancialHealthExplanationSheet: View {
+    let vm: DashboardViewModel
+    @Environment(\.dismiss) private var dismiss
+    
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                Color.appBg.ignoresSafeArea()
+                
+                ScrollView {
+                    VStack(spacing: 24) {
+                        // Score Header
+                        VStack(spacing: 12) {
+                            ZStack {
+                                Circle()
+                                    .stroke(vm.healthScoreColor.opacity(0.1), lineWidth: 10)
+                                    .frame(width: 100, height: 100)
+                                
+                                Circle()
+                                    .trim(from: 0, to: CGFloat(vm.financialHealthScore) / 100)
+                                    .stroke(vm.healthScoreColor, style: StrokeStyle(lineWidth: 10, lineCap: .round))
+                                    .frame(width: 100, height: 100)
+                                    .rotationEffect(.degrees(-90))
+                                
+                                Text("\(vm.financialHealthScore)")
+                                    .font(.system(size: 34, weight: .bold, design: .rounded))
+                                    .foregroundStyle(vm.healthScoreColor)
+                            }
+                            
+                            Text(vm.healthScoreText)
+                                .font(.title3.bold())
+                                .foregroundStyle(vm.healthScoreColor)
+                        }
+                        .padding(.top, 20)
+                        
+                        // Breakdown Section
+                        VStack(alignment: .leading, spacing: 16) {
+                            Text("Metric Breakdown")
+                                .font(.headline)
+                                .foregroundStyle(.white)
+                            
+                            VStack(spacing: 12) {
+                                explanationRow(title: "Net Worth", value: vm.currencyManager.format(amount: vm.totalNetWorth, currency: vm.baseCurrency), desc: "The total value of your assets minus your liabilities. Positive is good.")
+                                Divider().background(Color.white.opacity(0.1))
+                                explanationRow(title: "Debt Ratio", value: String(format: "%.1f%%", vm.debtToAssetRatio), desc: "Percentage of assets financed by debt. Below 30% is ideal.")
+                                Divider().background(Color.white.opacity(0.1))
+                                explanationRow(title: "Liquidity", value: String(format: "%.2fx", vm.liquidityRatio), desc: "Your ability to pay off short-term debts. Above 1.5x is strong.")
+                                Divider().background(Color.white.opacity(0.1))
+                                explanationRow(title: "Credit Usage", value: String(format: "%.1f%%", vm.creditUtilizationRatio), desc: "How much of your credit limit you're using. Keep it under 30%.")
+                            }
+                            .padding(16)
+                            .glassEffect(in: .rect(cornerRadius: 18))
+                        }
+                        
+                        // AI Recommendations
+                        aiRecommendationsSection(vm)
+                    }
+                    .padding(20)
+                }
+            }
+            .navigationTitle("Financial Health")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+    }
+    
+    @ViewBuilder
+    private func aiRecommendationsSection(_ vm: DashboardViewModel) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                Label("AI Recommendations", systemImage: "sparkles")
+                    .font(.headline)
+                    .foregroundStyle(.purple)
+                Spacer()
+                if vm.isLoadingAI {
+                    ProgressView().tint(.purple)
+                }
+            }
+            
+            if let recommendation = vm.aiRecommendation {
+                VStack(alignment: .trailing, spacing: 10) {
+                    Text(recommendation)
+                        .font(.subheadline)
+                        .foregroundStyle(.white.opacity(0.9))
+                        .lineSpacing(4)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(16)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.purple.opacity(0.1))
+                        .clipShape(RoundedRectangle(cornerRadius: 18))
+                        .overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.purple.opacity(0.2), lineWidth: 1))
+                    
+                    Button {
+                        Task { await vm.fetchAIRecommendation() }
+                    } label: {
+                        Label("Refresh Advice", systemImage: "arrow.clockwise")
+                            .font(.caption.bold())
+                            .foregroundStyle(.purple)
+                    }
+                    .disabled(vm.isLoadingAI)
+                }
+            } else {
+                Text("Click below to get personalized AI advice based on your current financial status.")
+                    .font(.caption)
+                    .foregroundStyle(.dimText)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+            }
+            
+            if vm.aiRecommendation == nil {
+                Button {
+                    Task { await vm.fetchAIRecommendation() }
+                } label: {
+                    HStack(spacing: 10) {
+                        if vm.isLoadingAI {
+                            ProgressView().tint(.white)
+                            Text("Generating...")
+                        } else {
+                            Image(systemName: "sparkles")
+                            Text("Generate AI Advice")
+                        }
+                    }
+                    .fontWeight(.bold)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                }
+                .buttonStyle(.glassProminent)
+                .tint(.purple)
+                .disabled(vm.isLoadingAI)
+            }
+        }
+    }
+    
+    private func explanationRow(title: String, value: String, desc: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(title).font(.subheadline.bold()).foregroundStyle(.white)
+                Spacer()
+                Text(value).font(.subheadline.bold()).foregroundStyle(.white)
+            }
+            Text(desc).font(.caption2).foregroundStyle(.dimText)
+        }
+    }
+}
 
 struct SplitBillHistoryView: View {
     @Environment(AppStore.self) private var store

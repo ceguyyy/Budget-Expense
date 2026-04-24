@@ -376,20 +376,18 @@ struct DebitView: View {
     private var fab: some View {
         Button {
             activeSheet = .add
-        } label: {
+        }label: {
             Image(systemName: "plus")
-                .font(.title3.bold())
+                .font(.title2.bold())
                 .foregroundStyle(.white)
-                .frame(width: 56, height: 56)
-                .background(
-                    LinearGradient(
-                        colors: [Color.blue, Color.blue.opacity(0.8)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
+                .frame(width: 64, height: 64)
+                .background(Color(red: 0.95, green: 0.4, blue: 0.2)) // Orange FAB
                 .clipShape(Circle())
-                .shadow(color: Color.blue.opacity(0.3), radius: 8, x: 0, y: 4)
+                .shadow(color: Color(red: 0.95, green: 0.4, blue: 0.2).opacity(0.4), radius: 8, x: 0, y: 4)
+                .glassEffect(
+                    .regular.tint(Color(white: 0.7)),
+                    in: Circle()
+                )
         }
         .padding(.trailing, 20)
         .padding(.bottom, 20)

@@ -104,6 +104,67 @@ enum VertexAIService {
         return try parseResponse(data)
     }
     
+    static func getFinancialRecommendation(prompt: String) async throws -> String {
+        guard let apiKey = EnvLoader.value(for: "VERTEX_API_KEY") else {
+            throw VertexAIError.missingConfiguration("VERTEX_API_KEY")
+        }
+
+        // Use the Gemini model ID from env or fallback to lite
+        let modelID = EnvLoader.value(for: "VERTEX_MODEL_ID") ?? "gemini-2.5-flash"
+        
+        let urlString = "https://generativelanguage.googleapis.com/v1beta/models/\(modelID):generateContent?key=\(apiKey)"
+
+        let requestBody: [String: Any] = [
+            "contents": [
+                [
+                    "parts": [
+                        ["text": prompt]
+                    ]
+                ]
+            ],
+            "generationConfig": [
+                "temperature": 0.7,
+                "maxOutputTokens": 1000,
+                "topP": 0.95
+            ]
+        ]
+
+        var request = URLRequest(url: URL(string: urlString)!)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
+        request.timeoutInterval = 30
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw VertexAIError.invalidResponse
+        }
+
+        guard httpResponse.statusCode == 200 else {
+            let errorText = String(data: data, encoding: .utf8) ?? "Unknown error"
+            print("❌ Gemini API Error (\(httpResponse.statusCode)):", errorText)
+            throw VertexAIError.apiError(httpResponse.statusCode, errorText)
+        }
+
+        return try parseGeminiResponse(data)
+    }
+    
+    static func parseGeminiResponse(_ data: Data) throws -> String {
+        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+
+        guard
+            let candidates = json?["candidates"] as? [[String: Any]],
+            let content = candidates.first?["content"] as? [String: Any],
+            let parts = content["parts"] as? [[String: Any]],
+            let text = parts.first?["text"] as? String
+        else {
+            throw VertexAIError.invalidResponse
+        }
+
+        return text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     // MARK: - File API Upload
     
     private static func uploadImage(imageData: Data, apiKey: String) async throws -> String {
