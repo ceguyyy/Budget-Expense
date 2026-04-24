@@ -84,6 +84,7 @@ struct DashboardView: View {
                         headerBar
                         swipeableCards
                         metricsGrid
+                        Divider()
                         featureCardsSection
                         analyticsSection
                         recentTransactionsSection
@@ -167,7 +168,15 @@ struct DashboardView: View {
         }
     }
     
-    // MARK: - Converted Calculated Properties
+    // MARK: - Converted Calculated Properties (Multi-Currency Support)
+    
+    private var currencyManager: CurrencyManager {
+        store.currencyManager
+    }
+    
+    private var baseCurrency: Currency {
+        currencyManager.baseCurrency
+    }
     
     private var totalNetWorthIDR: Double {
         totalWalletBalanceIDR + totalReceivablesIDR - store.totalOutstandingCC
@@ -175,19 +184,22 @@ struct DashboardView: View {
     
     private var totalWalletBalanceIDR: Double {
         store.wallets.reduce(0) { sum, w in
-            sum + (w.currency == .usd ? w.signedBalance * usdToIdrRate : w.signedBalance)
+            let amountInBase = currencyManager.toBaseCurrency(amount: w.signedBalance, from: w.currency)
+            return sum + amountInBase
         }
     }
     
     private var totalReceivablesIDR: Double {
         store.debts.filter { !$0.isSettled }.reduce(0) { sum, d in
-            sum + (d.currency == .usd ? d.amount * usdToIdrRate : d.amount)
+            let amountInBase = currencyManager.toBaseCurrency(amount: d.amount, from: d.currency)
+            return sum + amountInBase
         }
     }
     
     private var totalLiability: Double {
         store.wallets.filter { !$0.isPositive }.reduce(0) { sum, w in
-            sum + (w.currency == .usd ? w.balance * usdToIdrRate : w.balance)
+            let amountInBase = currencyManager.toBaseCurrency(amount: w.balance, from: w.currency)
+            return sum + amountInBase
         }
     }
     
@@ -204,7 +216,11 @@ struct DashboardView: View {
     }
     
     private func displayAmount(_ amount: Double) -> String {
-        return showBalances ? formatIDR(amount) : "Rp ••••••••"
+        if showBalances {
+            return currencyManager.format(amount: amount, currency: baseCurrency)
+        } else {
+            return "\(baseCurrency.symbol) ••••••••"
+        }
     }
     
     private var convertedChartData: [MonthlyChartData] {
@@ -229,13 +245,15 @@ struct DashboardView: View {
             
             let inflow = txs.filter { $0.type == .inflow }.reduce(0) { sum, tx in
                 let wallet = store.wallets.first { $0.id == tx.walletId }
-                let rate = wallet?.currency == .usd ? usdToIdrRate : 1.0
-                return sum + (tx.amount * rate)
+                guard let walletCurrency = wallet?.currency else { return sum }
+                let amountInBase = currencyManager.toBaseCurrency(amount: tx.amount, from: walletCurrency)
+                return sum + amountInBase
             }
             let outflow = txs.filter { $0.type == .outflow }.reduce(0) { sum, tx in
                 let wallet = store.wallets.first { $0.id == tx.walletId }
-                let rate = wallet?.currency == .usd ? usdToIdrRate : 1.0
-                return sum + (tx.amount * rate)
+                guard let walletCurrency = wallet?.currency else { return sum }
+                let amountInBase = currencyManager.toBaseCurrency(amount: tx.amount, from: walletCurrency)
+                return sum + amountInBase
             }
             
             return MonthlyChartData(month: fmt.string(from: date), inflow: inflow, outflow: outflow)

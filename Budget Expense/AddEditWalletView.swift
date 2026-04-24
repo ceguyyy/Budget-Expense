@@ -133,22 +133,37 @@ struct AddEditWalletView: View {
                     .padding(14).glassEffect(in: .rect(cornerRadius: 14))
             }
 
-            // Currency
+            // Currency - Horizontal Selector
             field(title: "CURRENCY", icon: "globe") {
-                HStack(spacing: 10) {
-                    ForEach(Currency.allCases, id: \.self) { c in
-                        Button { withAnimation(.spring(duration: 0.2)) { currency = c } } label: {
-                            VStack(spacing: 3) {
-                                Text(c.symbol).font(.title3.bold())
-                                Text(c.rawValue).font(.caption2.weight(.semibold))
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        ForEach(Currency.allCases, id: \.self) { c in
+                            Button { 
+                                withAnimation(.spring(duration: 0.2)) { 
+                                    currency = c 
+                                } 
+                            } label: {
+                                VStack(spacing: 6) {
+                                    Text(c.flag)
+                                        .font(.title2)
+                                    Text(c.symbol)
+                                        .font(.headline.bold())
+                                    Text(c.rawValue)
+                                        .font(.caption2.weight(.semibold))
+                                }
+                                .frame(width: 70)
+                                .padding(.vertical, 12)
+                                .glassEffect(
+                                    currency == c ? .regular.tint(Color(white: 0.6)) : .regular,
+                                    in: .rect(cornerRadius: 12)
+                                )
+                                .foregroundStyle(currency == c ? .white : Color(white: 0.38))
                             }
-                            .frame(maxWidth: .infinity).padding(.vertical, 12)
-                            .glassEffect(currency == c ? .regular.tint(Color(white: 0.6)) : .regular,
-                                         in: .rect(cornerRadius: 12))
-                            .foregroundStyle(currency == c ? .white : Color(white: 0.38))
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
                     }
+                    .padding(.horizontal, 2)
+                    .padding(.vertical, 2)
                 }
             }
 

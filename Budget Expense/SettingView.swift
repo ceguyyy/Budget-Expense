@@ -226,11 +226,30 @@ struct SettingView: View {
             }
             
             Section(header: Text("System").foregroundStyle(.glassText)) {
+                // ✅ Base Currency Selector
+                NavigationLink(destination: BaseCurrencySelectorView().environment(store)) {
+                    HStack {
+                        Label("Base Currency", systemImage: "dollarsign.circle.fill")
+                            .foregroundStyle(.white)
+                        Spacer()
+                        HStack(spacing: 4) {
+                            Text(store.currencyManager.baseCurrency.flag)
+                            Text(store.currencyManager.baseCurrency.rawValue)
+                                .font(.subheadline)
+                                .foregroundStyle(.neonGreen)
+                        }
+                        Image(systemName: "chevron.right")
+                            .foregroundStyle(.gray)
+                            .font(.caption)
+                    }
+                }
+                .listRowBackground(Color(white: 0.12))
+                
                 Button {
                     showCurrencyRates = true
                 } label: {
                     HStack {
-                        Label("Currency Rates", systemImage: "dollarsign.circle.fill")
+                        Label("Currency Rates", systemImage: "chart.line.uptrend.xyaxis")
                             .foregroundStyle(.white)
                         Spacer()
                         Image(systemName: "chevron.right")
@@ -319,21 +338,26 @@ struct SettingView: View {
             isPresented: $showingExporter,
             document: CSVFile(url: exportURL),
             contentType: .commaSeparatedText,
-            defaultFilename: "BudgetExpense_Export_\(Date().formatted(date: .numeric, time: .omitted))"
+            defaultFilename: "BudgetExpense_Export_\(Date().formatted(date: .numeric, time: .omitted).replacingOccurrences(of: "/", with: "-"))"
         ) { result in
             switch result {
             case .success(let url):
                 print("✅ CSV successfully saved to \(url)")
                 showSuccessAlert = true
-                // Clean up temp file
-                if let tempURL = exportURL {
-                    try? FileManager.default.removeItem(at: tempURL)
-                }
             case .failure(let error):
                 print("❌ Failed to save: \(error.localizedDescription)")
-                errorMessage = error.localizedDescription
+                errorMessage = "Failed to save CSV: \(error.localizedDescription)"
                 showErrorAlert = true
             }
+            
+            // Clean up temp file after a delay to ensure saving is complete
+            if let tempURL = exportURL {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                    try? FileManager.default.removeItem(at: tempURL)
+                    print("🗑️ Cleaned up temporary file")
+                }
+            }
+            exportURL = nil
         }
         .alert("Export Successful", isPresented: $showSuccessAlert) {
             Button("OK", role: .cancel) { }
@@ -553,15 +577,16 @@ struct SettingView: View {
     private func exportToCSV() {
         print("🔄 Starting CSV export...")
         
-        // 1. Setup CSV Headers
-        var csvString = "Date,Account Type,Account Name,Transaction Type,Category,Description,Amount,Status\n"
+        // 1. Setup CSV Headers with BOM for Excel compatibility
+        var csvString = "\u{FEFF}" // UTF-8 BOM for Excel
+        csvString += "Date,Account Type,Account Name,Transaction Type,Category,Description,Amount,Status\n"
         
         let df = DateFormatter()
         df.dateFormat = "yyyy-MM-dd HH:mm"
         
         // 2. Append Wallet Transactions (Debit Card)
         print("📊 Exporting \(store.walletTransactions.count) wallet transactions")
-        for tx in store.walletTransactions {
+        for tx in store.walletTransactions.sorted(by: { $0.date > $1.date }) {
             let date = df.string(from: tx.date)
             let accountName = store.wallets.first(where: { $0.id == tx.walletId })?.name ?? "Unknown Wallet"
             let type = tx.type.rawValue // Inflow / Outflow
@@ -569,24 +594,24 @@ struct SettingView: View {
             // Escape commas and quotes to prevent breaking CSV format
             let category = escapeCSV(tx.category)
             let note = escapeCSV(tx.note)
-            let amount = "\(tx.amount)"
+            let amount = String(format: "%.2f", tx.amount)
             
-            csvString += "\"\(date)\",\"Debit Wallet\",\"\(accountName)\",\"\(type)\",\"\(category)\",\"\(note)\",\(amount),\"Completed\"\n"
+            csvString += "\"\(date)\",\"Debit Wallet\",\"\(escapeCSV(accountName))\",\"\(type)\",\"\(category)\",\"\(note)\",\(amount),\"Completed\"\n"
         }
         
         // 3. Append Credit Card Transactions
         print("💳 Exporting from \(store.creditCards.count) credit cards")
         for card in store.creditCards {
             print("  - Card: \(card.name), \(card.transactions.count) transactions, \(card.installments.count) installments")
-            for tx in card.transactions {
+            for tx in card.transactions.sorted(by: { $0.date > $1.date }) {
                 let date = df.string(from: tx.date)
-                let accountName = card.name
+                let accountName = escapeCSV(card.name)
                 let type = "Outflow" // CC transactions are primarily expenses
                 let status = tx.isPaid ? "Paid" : "Unpaid"
                 
                 let category = escapeCSV(tx.category)
                 let description = escapeCSV(tx.description)
-                let amount = "\(tx.amount)"
+                let amount = String(format: "%.2f", tx.amount)
                 
                 csvString += "\"\(date)\",\"Credit Card\",\"\(accountName)\",\"\(type)\",\"\(category)\",\"\(description)\",\(amount),\"\(status)\"\n"
             }
@@ -594,28 +619,55 @@ struct SettingView: View {
             // 4. Append Credit Card Installments
             for inst in card.installments {
                 let dateString = df.string(from: inst.startDate)
-                let accountName = card.name
+                let accountName = escapeCSV(card.name)
                 let status = inst.isCompleted ? "Completed" : "Active (\(inst.paidMonths)/\(inst.totalMonths))"
                 let description = escapeCSV(inst.description)
                 let monthlyAmount = String(format: "%.2f", inst.monthlyPayment)
+                let totalAmount = String(format: "%.2f", inst.totalPrincipal)
                 
-                csvString += "\"\(dateString)\",\"Credit Card Installment\",\"\(accountName)\",\"Outflow\",\"Installment\",\"\(description)\",\(monthlyAmount),\"\(status)\"\n"
+                csvString += "\"\(dateString)\",\"Credit Card Installment\",\"\(accountName)\",\"Outflow\",\"Installment\",\"\(description) (Total: Rp \(totalAmount))\",\(monthlyAmount),\"\(status)\"\n"
             }
         }
         
-        print("✅ CSV generated with \(csvString.split(separator: "\n").count - 1) rows")
-        print("📝 CSV preview (first 500 chars):\n\(String(csvString.prefix(500)))")
+        // 5. Append Debts/Receivables
+        print("💰 Exporting \(store.debts.count) debts/receivables")
+        for debt in store.debts {
+            let date = df.string(from: debt.date)
+            let personName = escapeCSV(debt.personName)
+            let note = escapeCSV(debt.note)
+            let amount = String(format: "%.2f", debt.amount)
+            let status = debt.isSettled ? "Settled" : "Outstanding"
+            
+            csvString += "\"\(date)\",\"Receivable\",\"\(personName)\",\"Inflow\",\"Debt/Loan\",\"\(note)\",\(amount),\"\(status)\"\n"
+        }
         
-        // 5. Write to temporary file and show exporter
-        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("export.csv")
+        let rowCount = csvString.components(separatedBy: "\n").count - 1
+        print("✅ CSV generated with \(rowCount) rows")
+        print("📏 CSV size: \(csvString.count) characters")
+        
+        // 6. Write to temporary file with unique name
+        let timestamp = Int(Date().timeIntervalSince1970)
+        let filename = "BudgetExpense_\(timestamp).csv"
+        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(filename)
+        
         do {
+            // Ensure we write with UTF-8 encoding
             try csvString.write(to: tempURL, atomically: true, encoding: .utf8)
+            
+            // Verify file was created
+            guard FileManager.default.fileExists(atPath: tempURL.path) else {
+                throw NSError(domain: "CSVExport", code: 1, userInfo: [NSLocalizedDescriptionKey: "File was not created"])
+            }
+            
+            let fileSize = try FileManager.default.attributesOfItem(atPath: tempURL.path)[.size] as? Int ?? 0
             print("💾 Temporary file created at: \(tempURL)")
+            print("📦 File size: \(fileSize) bytes")
+            
             exportURL = tempURL
             showingExporter = true
         } catch {
-            print("❌ Failed to create temp file: \(error)")
-            errorMessage = error.localizedDescription
+            print("❌ Failed to create temp file: \(error.localizedDescription)")
+            errorMessage = "Failed to create CSV file: \(error.localizedDescription)"
             showErrorAlert = true
         }
     }
@@ -731,10 +783,6 @@ struct CurrencyRatesView: View {
                                         Text("Base Currency")
                                             .font(.caption)
                                             .foregroundStyle(.white.opacity(0.6))
-                                        Spacer()
-                                        Image(systemName: "chevron.right")
-                                            .font(.caption)
-                                            .foregroundStyle(.neonGreen)
                                     }
                                     
                                     HStack {
@@ -1018,7 +1066,7 @@ struct CurrencySelectorView: View {
                     ScrollView {
                         VStack(spacing: 12) {
                             ForEach(filteredCurrencies, id: \.self) { currency in
-                                CurrencySelectionRow(
+                                CurrencyStringSelectionRow(
                                     currency: currency,
                                     isSelected: viewModel.selectedCurrencies.contains(currency)
                                 ) {
@@ -1130,8 +1178,8 @@ struct CurrencyPickerRow: View {
     }
 }
 
-// MARK: - Currency Selection Row
-struct CurrencySelectionRow: View {
+// MARK: - Currency String Selection Row (for rates view)
+struct CurrencyStringSelectionRow: View {
     let currency: String
     let isSelected: Bool
     let action: () -> Void
@@ -1458,7 +1506,7 @@ struct JSONBackupFile: FileDocument {
 
 // MARK: - CSV File Document Wrapper
 struct CSVFile: FileDocument {
-    static var readableContentTypes: [UTType] { [.commaSeparatedText] }
+    static var readableContentTypes: [UTType] { [.commaSeparatedText, .plainText] }
     
     var url: URL?
     
@@ -1473,14 +1521,303 @@ struct CSVFile: FileDocument {
     
     func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
         guard let url = url else {
-            throw CocoaError(.fileNoSuchFile)
+            print("❌ CSVFile: URL is nil")
+            throw NSError(
+                domain: "CSVExport",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "Export URL is missing"]
+            )
         }
+        
+        print("📂 CSVFile: Creating file wrapper for: \(url.path)")
         
         guard FileManager.default.fileExists(atPath: url.path) else {
-            throw CocoaError(.fileNoSuchFile)
+            print("❌ CSVFile: File does not exist at path: \(url.path)")
+            throw NSError(
+                domain: "CSVExport",
+                code: 2,
+                userInfo: [NSLocalizedDescriptionKey: "Temporary file not found"]
+            )
         }
         
-        return try FileWrapper(url: url)
+        do {
+            let wrapper = try FileWrapper(url: url, options: .immediate)
+            print("✅ CSVFile: File wrapper created successfully")
+            return wrapper
+        } catch {
+            print("❌ CSVFile: Failed to create file wrapper: \(error.localizedDescription)")
+            throw error
+        }
+    }
+}
+
+// MARK: - Base Currency Selector View
+
+struct BaseCurrencySelectorView: View {
+    @Environment(AppStore.self) private var store
+    @Environment(\.dismiss) private var dismiss
+    @State private var searchText = ""
+    
+    private let popularCurrencies: [Currency] = [.usd, .eur, .gbp, .jpy, .cny, .sgd, .idr, .aud]
+    
+    var filteredCurrencies: [Currency] {
+        if searchText.isEmpty {
+            return Currency.allCases
+        }
+        return Currency.allCases.filter { currency in
+            currency.rawValue.localizedCaseInsensitiveContains(searchText) ||
+            currency.name.localizedCaseInsensitiveContains(searchText)
+        }
+    }
+    
+    var body: some View {
+        ZStack {
+            Color.appBg.ignoresSafeArea()
+            
+            VStack(spacing: 0) {
+                // Search bar
+                HStack {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundStyle(.white.opacity(0.5))
+                    TextField("Search currencies", text: $searchText)
+                        .foregroundStyle(.white)
+                        .autocorrectionDisabled()
+                    
+                    if !searchText.isEmpty {
+                        Button {
+                            searchText = ""
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundStyle(.white.opacity(0.5))
+                        }
+                    }
+                }
+                .padding()
+                .background(Color(white: 0.12))
+                .cornerRadius(12)
+                .padding()
+                
+                // Current Base Currency Info
+                VStack(spacing: 8) {
+                    HStack {
+                        Image(systemName: "star.fill")
+                            .foregroundStyle(.neonGreen)
+                        Text("Current Base Currency")
+                            .font(.caption)
+                            .foregroundStyle(.glassText)
+                        Spacer()
+                    }
+                    
+                    HStack {
+                        Text(store.currencyManager.baseCurrency.flag)
+                            .font(.largeTitle)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(store.currencyManager.baseCurrency.name)
+                                .font(.headline)
+                                .foregroundStyle(.white)
+                            Text(store.currencyManager.baseCurrency.rawValue)
+                                .font(.caption)
+                                .foregroundStyle(.glassText)
+                        }
+                        Spacer()
+                        Text(store.currencyManager.baseCurrency.symbol)
+                            .font(.title2)
+                            .foregroundStyle(.neonGreen)
+                    }
+                }
+                .padding()
+                .background(Color(white: 0.08))
+                .cornerRadius(16)
+                .padding(.horizontal)
+                
+                // Last update info
+                if let lastUpdate = store.currencyManager.lastUpdateDate {
+                    HStack {
+                        Image(systemName: "clock.fill")
+                            .font(.caption)
+                            .foregroundStyle(.glassText)
+                        Text("Last updated: \(lastUpdate, style: .relative) ago")
+                            .font(.caption2)
+                            .foregroundStyle(.glassText)
+                        Spacer()
+                        
+                        Button {
+                            Task {
+                                await store.currencyManager.forceRefreshRates()
+                            }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: store.currencyManager.isLoadingRates ? "arrow.clockwise" : "arrow.clockwise")
+                                    .rotationEffect(.degrees(store.currencyManager.isLoadingRates ? 360 : 0))
+                                    .animation(store.currencyManager.isLoadingRates ? .linear(duration: 1).repeatForever(autoreverses: false) : .default, value: store.currencyManager.isLoadingRates)
+                                Text("Refresh")
+                            }
+                            .font(.caption)
+                            .foregroundStyle(.neonGreen)
+                        }
+                        .disabled(store.currencyManager.isLoadingRates)
+                    }
+                    .padding(.horizontal)
+                    .padding(.top, 8)
+                }
+                
+                Divider()
+                    .background(Color.white.opacity(0.1))
+                    .padding(.vertical, 12)
+                
+                // Currency List
+                ScrollView {
+                    VStack(spacing: 16) {
+                        // Popular Section
+                        if searchText.isEmpty {
+                            VStack(alignment: .leading, spacing: 12) {
+                                Text("POPULAR")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.glassText)
+                                    .padding(.horizontal)
+                                
+                                VStack(spacing: 8) {
+                                    ForEach(popularCurrencies, id: \.self) { currency in
+                                        CurrencySelectionRow(
+                                            currency: currency,
+                                            isSelected: store.currencyManager.baseCurrency == currency,
+                                            exchangeRate: store.currencyManager.exchangeRates[currency]
+                                        ) {
+                                            selectCurrency(currency)
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            Divider()
+                                .background(Color.white.opacity(0.1))
+                                .padding(.vertical, 8)
+                        }
+                        
+                        // All Currencies
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text(searchText.isEmpty ? "ALL CURRENCIES" : "SEARCH RESULTS")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.glassText)
+                                .padding(.horizontal)
+                            
+                            VStack(spacing: 8) {
+                                ForEach(filteredCurrencies, id: \.self) { currency in
+                                    if searchText.isEmpty {
+                                        // Only show non-popular in "All" section
+                                        if !popularCurrencies.contains(currency) {
+                                            CurrencySelectionRow(
+                                                currency: currency,
+                                                isSelected: store.currencyManager.baseCurrency == currency,
+                                                exchangeRate: store.currencyManager.exchangeRates[currency]
+                                            ) {
+                                                selectCurrency(currency)
+                                            }
+                                        }
+                                    } else {
+                                        // Show all in search results
+                                        CurrencySelectionRow(
+                                            currency: currency,
+                                            isSelected: store.currencyManager.baseCurrency == currency,
+                                            exchangeRate: store.currencyManager.exchangeRates[currency]
+                                        ) {
+                                            selectCurrency(currency)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    .padding()
+                }
+            }
+        }
+        .navigationTitle("Base Currency")
+        #if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
+        #endif
+    }
+    
+    private func selectCurrency(_ currency: Currency) {
+        withAnimation {
+            store.currencyManager.baseCurrency = currency
+        }
+        
+        // Haptic feedback
+        #if os(iOS)
+        let generator = UIImpactFeedbackGenerator(style: .medium)
+        generator.impactOccurred()
+        #endif
+    }
+}
+
+// MARK: - Currency Selection Row Component
+
+struct CurrencySelectionRow: View {
+    let currency: Currency
+    let isSelected: Bool
+    let exchangeRate: Double?
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                // Flag
+                Text(currency.flag)
+                    .font(.largeTitle)
+                    .frame(width: 50, height: 50)
+                    .background(Color.white.opacity(0.06))
+                    .cornerRadius(12)
+                
+                // Currency Info
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(currency.name)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.white)
+                    
+                    HStack(spacing: 8) {
+                        Text(currency.rawValue)
+                            .font(.caption)
+                            .foregroundStyle(.glassText)
+                        
+                        if let rate = exchangeRate, rate != 1.0 {
+                            Text("•")
+                                .foregroundStyle(.dimText)
+                            Text("1 = \(String(format: "%.4f", rate))")
+                                .font(.caption2)
+                                .foregroundStyle(.dimText)
+                        }
+                    }
+                }
+                
+                Spacer()
+                
+                // Symbol & Selection Indicator
+                HStack(spacing: 12) {
+                    Text(currency.symbol)
+                        .font(.headline)
+                        .foregroundStyle(.glassText)
+                    
+                    if isSelected {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(.neonGreen)
+                            .font(.title3)
+                    } else {
+                        Image(systemName: "circle")
+                            .foregroundStyle(.white.opacity(0.2))
+                            .font(.title3)
+                    }
+                }
+            }
+            .padding()
+            .background(isSelected ? Color.neonGreen.opacity(0.1) : Color(white: 0.08))
+            .cornerRadius(16)
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke(isSelected ? Color.neonGreen : Color.clear, lineWidth: 2)
+            )
+        }
+        .buttonStyle(.plain)
     }
 }
 

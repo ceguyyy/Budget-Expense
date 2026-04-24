@@ -9,8 +9,81 @@ import Observation
 // MARK: - Currency
 
 enum Currency: String, CaseIterable, Codable {
-    case idr = "IDR", usd = "USD"
-    var symbol: String { self == .idr ? "Rp" : "$" }
+    case usd = "USD"
+    case eur = "EUR"
+    case gbp = "GBP"
+    case jpy = "JPY"
+    case cny = "CNY"
+    case inr = "INR"
+    case aud = "AUD"
+    case cad = "CAD"
+    case chf = "CHF"
+    case sgd = "SGD"
+    case myr = "MYR"
+    case thb = "THB"
+    case idr = "IDR"
+    case krw = "KRW"
+    case rub = "RUB"
+    case brl = "BRL"
+    
+    var symbol: String {
+        switch self {
+        case .usd, .aud, .cad, .sgd: return "$"
+        case .eur: return "€"
+        case .gbp: return "£"
+        case .jpy, .cny: return "¥"
+        case .inr: return "₹"
+        case .chf: return "₣"
+        case .myr: return "RM"
+        case .thb: return "฿"
+        case .idr: return "Rp"
+        case .krw: return "₩"
+        case .rub: return "₽"
+        case .brl: return "R$"
+        }
+    }
+    
+    var name: String {
+        switch self {
+        case .usd: return "US Dollar"
+        case .eur: return "Euro"
+        case .gbp: return "British Pound"
+        case .jpy: return "Japanese Yen"
+        case .cny: return "Chinese Yuan"
+        case .inr: return "Indian Rupee"
+        case .aud: return "Australian Dollar"
+        case .cad: return "Canadian Dollar"
+        case .chf: return "Swiss Franc"
+        case .sgd: return "Singapore Dollar"
+        case .myr: return "Malaysian Ringgit"
+        case .thb: return "Thai Baht"
+        case .idr: return "Indonesian Rupiah"
+        case .krw: return "South Korean Won"
+        case .rub: return "Russian Ruble"
+        case .brl: return "Brazilian Real"
+        }
+    }
+    
+    var flag: String {
+        switch self {
+        case .usd: return "🇺🇸"
+        case .eur: return "🇪🇺"
+        case .gbp: return "🇬🇧"
+        case .jpy: return "🇯🇵"
+        case .cny: return "🇨🇳"
+        case .inr: return "🇮🇳"
+        case .aud: return "🇦🇺"
+        case .cad: return "🇨🇦"
+        case .chf: return "🇨🇭"
+        case .sgd: return "🇸🇬"
+        case .myr: return "🇲🇾"
+        case .thb: return "🇹🇭"
+        case .idr: return "🇮🇩"
+        case .krw: return "🇰🇷"
+        case .rub: return "🇷🇺"
+        case .brl: return "🇧🇷"
+        }
+    }
 }
 
 // MARK: - Debit Wallet
@@ -64,6 +137,7 @@ struct CreditCard: Identifiable, Codable {
     var name: String         // nickname / last 4 digits label
     var bank: String
     var limit: Double
+    var currency: Currency = .idr  // ✅ Add currency support
     var billingCycleDay: Int // 1–28: day new billing cycle starts
     var dueDay: Int          // payment due day
     var colorIndex: Int = 0
@@ -76,8 +150,19 @@ struct CreditCard: Identifiable, Codable {
     var totalOutstanding: Double {
         transactions.filter { !$0.isPaid }.reduce(0) { $0 + $1.amount }
     }
-    var remainingLimit: Double { max(0, limit - totalOutstanding) }
-    var usedPercent: Double { limit > 0 ? min(1, totalOutstanding / limit) : 0 }
+    
+    // Total sisa cicilan yang belum lunas
+    var totalInstallmentOutstanding: Double {
+        installments.filter { !$0.isCompleted }.reduce(0) { $0 + $1.remainingAmount }
+    }
+    
+    // Total yang menggunakan limit = transaksi belum bayar + sisa cicilan
+    var totalUsedLimit: Double {
+        totalOutstanding + totalInstallmentOutstanding
+    }
+    
+    var remainingLimit: Double { max(0, limit - totalUsedLimit) }
+    var usedPercent: Double { limit > 0 ? min(1, totalUsedLimit / limit) : 0 }
 
     static let palette: [Color] = [
         Color(red: 0.20, green: 0.45, blue: 0.90),
@@ -186,14 +271,21 @@ class AppStore {
     var creditCards: [CreditCard] = []
     var debts: [Debt] = []
     var splitBills: [SplitBillRecord] = []
-
+    
+    // ✅ Currency Manager for multi-currency support
+    var currencyManager: CurrencyManager
+    
     private let walletsKey   = "budget_expense_wallets"
     private let txKey        = "store_wallet_tx_v2"
     private let ccKey        = "store_credit_cards_v2"
     private let debtKey      = "store_debts_v2"
     private let splitBillKey = "store_split_bills_v2"
 
-    init() { load() }
+    init() {
+        // ✅ Use shared singleton instance to prevent multiple inits
+        self.currencyManager = CurrencyManager.shared
+        load()
+    }
 
     // MARK: Wallet CRUD
 
@@ -355,16 +447,69 @@ class AppStore {
         return cal.date(from: comps) ?? cycleEnd
     }
 
-    // MARK: Dashboard Metrics
+    // MARK: Dashboard Metrics (Multi-Currency)
 
+    // ✅ Total wallet balance in base currency
+    var totalDebit: Double {
+        wallets.reduce(0) { sum, wallet in
+            sum + currencyManager.toBaseCurrency(amount: wallet.signedBalance, from: wallet.currency)
+        }
+    }
+    
+    // ✅ Total receivables in base currency
+    var totalReceivables: Double {
+        debts.filter { !$0.isSettled }.reduce(0) { sum, debt in
+            sum + currencyManager.toBaseCurrency(amount: debt.amount, from: debt.currency)
+        }
+    }
+    
+    // ✅ Total CC outstanding in base currency
+    var totalOutstandingCC: Double {
+        creditCards.reduce(0) { sum, card in
+            sum + currencyManager.toBaseCurrency(amount: card.totalUsedLimit, from: card.currency)
+        }
+    }
+    
+    // ✅ Total monthly installments in base currency
+    var totalMonthlyInstallments: Double {
+        creditCards.flatMap { $0.installments }.filter { !$0.isCompleted }.reduce(0) { sum, inst in
+            let card = creditCards.first { $0.installments.contains { $0.id == inst.id } }
+            let currency = card?.currency ?? .idr
+            return sum + currencyManager.toBaseCurrency(amount: inst.monthlyPayment, from: currency)
+        }
+    }
+    
+    // ✅ Total monthly payable in base currency
+    var totalMonthlyPayable: Double {
+        creditCards.reduce(0) { sum, card in
+            let due = totalDueThisMonth(for: card)
+            return sum + currencyManager.toBaseCurrency(amount: due, from: card.currency)
+        }
+    }
+    
+    // ✅ Net worth in base currency
+    var netWorth: Double { totalDebit + totalReceivables - totalOutstandingCC }
+    
+    // ✅ Liquidity in base currency
+    var liquidity: Double {
+        let liquid = wallets.filter { $0.isPositive }.reduce(0) { sum, wallet in
+            sum + currencyManager.toBaseCurrency(amount: wallet.balance, from: wallet.currency)
+        }
+        return liquid - totalMonthlyPayable
+    }
+    
+    // Legacy properties for backward compatibility (deprecated)
+    @available(*, deprecated, message: "Use totalDebit instead")
     var totalDebitIDR: Double { wallets.filter { $0.currency == .idr }.reduce(0) { $0 + $1.signedBalance } }
+    @available(*, deprecated, message: "Use totalDebit instead")
     var totalDebitUSD: Double { wallets.filter { $0.currency == .usd }.reduce(0) { $0 + $1.signedBalance } }
+    @available(*, deprecated, message: "Use totalReceivables instead")
     var totalReceivablesIDR: Double { debts.filter { !$0.isSettled && $0.currency == .idr }.reduce(0) { $0 + $1.amount } }
+    @available(*, deprecated, message: "Use totalReceivables instead")
     var totalReceivablesUSD: Double { debts.filter { !$0.isSettled && $0.currency == .usd }.reduce(0) { $0 + $1.amount } }
-    var totalOutstandingCC: Double  { creditCards.reduce(0) { $0 + $1.totalOutstanding } }
-    var totalMonthlyInstallments: Double { creditCards.flatMap { $0.installments }.filter { !$0.isCompleted }.reduce(0) { $0 + $1.monthlyPayment } }
-    var totalMonthlyPayable: Double { creditCards.reduce(0) { $0 + totalDueThisMonth(for: $1) } }
+    @available(*, deprecated, message: "Use netWorth instead")
     var netWorthIDR: Double { totalDebitIDR + totalReceivablesIDR - totalOutstandingCC }
+    @available(*, deprecated, message: "Use liquidity instead")
     var liquidityIDR: Double {
         let liquid = wallets.filter { $0.currency == .idr && $0.isPositive }.reduce(0) { $0 + $1.balance }
         return liquid - totalMonthlyPayable

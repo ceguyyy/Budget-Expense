@@ -14,6 +14,7 @@ struct AddEditCreditCardView: View {
     @State private var name           = ""
     @State private var bank           = ""
     @State private var limitText      = ""
+    @State private var currency       = Currency.idr  // ✅ Add currency
     @State private var billingDay     = 25
     @State private var dueDay         = 10
     @State private var colorIndex     = 0
@@ -59,7 +60,9 @@ struct AddEditCreditCardView: View {
     private var cardPreview: some View {
         let previewCard = CreditCard(name: name.isEmpty ? "Card Name" : name,
                                      bank: bank.isEmpty ? "Bank" : bank,
-                                     limit: parsedLimit, billingCycleDay: billingDay,
+                                     limit: parsedLimit,
+                                     currency: currency,  // ✅ Include currency
+                                     billingCycleDay: billingDay,
                                      dueDay: dueDay, colorIndex: colorIndex)
         return ZStack(alignment: .bottomLeading) {
             RoundedRectangle(cornerRadius: 18)
@@ -78,7 +81,8 @@ struct AddEditCreditCardView: View {
                     Image(systemName: "creditcard.fill").font(.title2).foregroundStyle(.white.opacity(0.5))
                 }
                 Spacer()
-                Text("Limit: \(formatIDR(parsedLimit))").font(.caption.bold()).foregroundStyle(.white)
+                Text("Limit: \(currency.symbol) \(formatNumber(parsedLimit))")  // ✅ Show currency symbol
+                    .font(.caption.bold()).foregroundStyle(.white)
             }
             .padding(18)
         }
@@ -101,11 +105,56 @@ struct AddEditCreditCardView: View {
                     .textFieldStyle(.plain).font(.body).foregroundStyle(.white)
                     .padding(14).glassEffect(in: .rect(cornerRadius: 14))
             }
+            
+            // ✅ Currency Selector
+            field("CURRENCY", "dollarsign.circle") {
+                Menu {
+                    ForEach(Currency.allCases, id: \.self) { curr in
+                        Button {
+                            currency = curr
+                        } label: {
+                            HStack(spacing: 8) {
+                                Text(curr.flag)
+                                    .font(.body)
+                                Text(curr.name)
+                                Text("(\(curr.rawValue))")
+                                    .foregroundStyle(.secondary)
+                                Spacer()
+                                Text(curr.symbol)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 10) {
+                        Text(currency.flag)
+                            .font(.title3)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(currency.name)
+                                .foregroundStyle(.white)
+                                .font(.body)
+                            Text(currency.rawValue)
+                                .font(.caption2)
+                                .foregroundStyle(.glassText)
+                        }
+                        Spacer()
+                        Text(currency.symbol)
+                            .foregroundStyle(.glassText)
+                            .font(.headline)
+                        Image(systemName: "chevron.up.chevron.down")
+                            .font(.caption)
+                            .foregroundStyle(.dimText)
+                    }
+                    .padding(14)
+                    .glassEffect(in: .rect(cornerRadius: 14))
+                }
+                .buttonStyle(.plain)
+            }
 
             // Limit
             field("CARD LIMIT", "banknote") {
                 HStack(spacing: 10) {
-                    Text("Rp").font(.headline).foregroundStyle(.glassText)
+                    Text(currency.symbol).font(.headline).foregroundStyle(.glassText)  // ✅ Dynamic currency
                     TextField("0", text: $limitText)
                         #if os(iOS)
                         .keyboardType(.numberPad)
@@ -183,6 +232,7 @@ struct AddEditCreditCardView: View {
         name       = c.name
         bank       = c.bank
         limitText  = "\(Int(c.limit))"
+        currency   = c.currency  // ✅ Load currency
         billingDay = c.billingCycleDay
         dueDay     = c.dueDay
         colorIndex = c.colorIndex
@@ -193,13 +243,23 @@ struct AddEditCreditCardView: View {
             id: editTarget?.id ?? UUID(),
             name: name.trimmingCharacters(in: .whitespaces),
             bank: bank.trimmingCharacters(in: .whitespaces),
-            limit: parsedLimit, billingCycleDay: billingDay, dueDay: dueDay,
+            limit: parsedLimit,
+            currency: currency,  // ✅ Save currency
+            billingCycleDay: billingDay, dueDay: dueDay,
             colorIndex: colorIndex,
             transactions: editTarget?.transactions ?? [],
             installments: editTarget?.installments ?? []
         )
         if isEditMode { store.updateCreditCard(card) } else { store.addCreditCard(card) }
         dismiss()
+    }
+    
+    // ✅ Helper for formatting numbers
+    private func formatNumber(_ value: Double) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.maximumFractionDigits = 0
+        return formatter.string(from: NSNumber(value: value)) ?? "\(Int(value))"
     }
 }
 
