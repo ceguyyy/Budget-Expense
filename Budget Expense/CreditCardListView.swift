@@ -153,55 +153,96 @@ struct CreditCardListRow: View {
     let store: AppStore
 
     var body: some View {
-        HStack(spacing: 14) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(card.cardColor.opacity(0.18))
-                    .frame(width: 50, height: 50)
-
-                Text(card.initials)
-                    .font(.headline.bold())
-                    .foregroundStyle(card.cardColor)
+        VStack(alignment: .leading, spacing: 0) {
+            // Top Section: Bank Name and Icon
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(card.bank)
+                        .font(.caption.bold())
+                        .foregroundStyle(.white.opacity(0.8))
+                    Text(card.name)
+                        .font(.headline.bold())
+                        .foregroundStyle(.white)
+                }
+                
+                Spacer()
+                
+                // Chip-like icon
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(LinearGradient(colors: [Color(white: 0.8), Color(white: 0.5)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                    .frame(width: 32, height: 24)
+                    .overlay(
+                        VStack(spacing: 4) {
+                            ForEach(0..<3) { _ in
+                                Rectangle().fill(Color.black.opacity(0.1)).frame(height: 1)
+                            }
+                        }
+                    )
             }
-
+            .padding(.bottom, 20)
+            
+            // Middle Section: Outstanding / Bill
             VStack(alignment: .leading, spacing: 4) {
-                Text(card.name)
-                    .font(.headline)
+                Text("CURRENT BILL")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(.white.opacity(0.6))
+                    .kerning(1)
+                
+                Text(formatCurrency(store.totalDueThisMonth(for: card), currency: card.currency))
+                    .font(.title3.bold())
                     .foregroundStyle(.white)
-                    .lineLimit(1)
-
-                Text(card.bank)
-                    .font(.caption)
-                    .foregroundStyle(.glassText)
             }
-
-            Spacer(minLength: 8)
-
-            VStack(alignment: .trailing, spacing: 4) {
-                Text("Bill: \(formatIDR(store.totalDueThisMonth(for: card)))")
-                    .font(.caption.bold())
-                    .foregroundStyle(.neonRed)
-
-                Text("Left: \(formatIDR(card.remainingLimit))")
-                    .font(.caption2)
-                    .foregroundStyle(.glassText)
-
+            
+            Spacer(minLength: 16)
+            
+            // Bottom Section: Progress and Remaining Limit
+            VStack(spacing: 8) {
                 GeometryReader { geo in
                     ZStack(alignment: .leading) {
-                        RoundedRectangle(cornerRadius: 2)
-                            .fill(Color(white: 0.12))
-                            .frame(height: 3)
-
-                        RoundedRectangle(cornerRadius: 2)
-                            .fill(card.usedPercent > 0.8 ? Color.neonRed : card.cardColor)
-                            .frame(width: geo.size.width * card.usedPercent, height: 3)
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(Color.black.opacity(0.2))
+                            .frame(height: 6)
+                        
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(LinearGradient(colors: [.white, .white.opacity(0.7)], startPoint: .leading, endPoint: .trailing))
+                            .frame(width: geo.size.width * card.usedPercent, height: 6)
                     }
                 }
-                .frame(width: 80, height: 3)
+                .frame(height: 6)
+                
+                HStack {
+                    Text("Limit: \(formatCurrency(card.limit, currency: card.currency))")
+                    Spacer()
+                    Text("Left: \(formatCurrency(card.remainingLimit, currency: card.currency))")
+                        .foregroundStyle(card.usedPercent > 0.8 ? .neonRed : .white.opacity(0.8))
+                }
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(.white.opacity(0.6))
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 14)
-        .glassEffect(in: .rect(cornerRadius: 18))
+        .padding(20)
+        .background(
+            ZStack {
+                // Card Color Gradient
+                LinearGradient(
+                    colors: [card.cardColor, card.cardColor.opacity(0.7)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                
+                // Subtle Pattern Overlay
+                Circle()
+                    .fill(Color.white.opacity(0.05))
+                    .frame(width: 150, height: 150)
+                    .offset(x: 120, y: -40)
+                
+                Circle()
+                    .fill(Color.black.opacity(0.05))
+                    .frame(width: 100, height: 100)
+                    .offset(x: -60, y: 60)
+            }
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 20))
+        .shadow(color: card.cardColor.opacity(0.3), radius: 8, x: 0, y: 4)
     }
 }

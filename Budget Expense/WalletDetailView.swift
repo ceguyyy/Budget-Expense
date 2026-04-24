@@ -124,61 +124,117 @@ struct WalletDetailView: View {
     // MARK: Hero Card
 
     private func walletHeroCard(_ wallet: Wallet) -> some View {
-        HStack(spacing: 16) {
-            ZStack {
-                if let imgData = wallet.imageData, let uiImage = UIImage(data: imgData) {
-                    Image(uiImage: uiImage)
-                        .resizable()
-                        .scaledToFill()
-                        .frame(width: 60, height: 60)
-                        .clipShape(RoundedRectangle(cornerRadius: 16))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 16)
-                                .stroke(wallet.accentColor, lineWidth: 2)
-                        )
-                } else {
-                    RoundedRectangle(cornerRadius: 16)
-                        .fill(wallet.accentColor.opacity(0.12)).frame(width: 60, height: 60)
-                    Text(wallet.initials).font(.title3.bold()).foregroundStyle(wallet.accentColor)
+        VStack(spacing: 20) {
+            HStack(spacing: 16) {
+                ZStack {
+                    if let imgData = wallet.imageData, let uiImage = UIImage(data: imgData) {
+                        Image(uiImage: uiImage)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: 64, height: 64)
+                            .clipShape(RoundedRectangle(cornerRadius: 18))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 18)
+                                    .stroke(wallet.accentColor.opacity(0.3), lineWidth: 1)
+                            )
+                    } else {
+                        RoundedRectangle(cornerRadius: 18)
+                            .fill(wallet.accentColor.opacity(0.12)).frame(width: 64, height: 64)
+                        Text(wallet.initials).font(.title2.bold()).foregroundStyle(wallet.accentColor)
+                    }
                 }
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(wallet.name)
+                        .font(.headline)
+                        .foregroundStyle(.white)
+                    
+                    HStack(spacing: 6) {
+                        Text(wallet.currency.rawValue)
+                            .font(.system(size: 10, weight: .bold))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(Color.white.opacity(0.1), in: Capsule())
+                            .foregroundStyle(.glassText)
+                        
+                        Text(wallet.isPositive ? "Asset" : "Liability")
+                            .font(.caption2.bold())
+                            .foregroundStyle(wallet.accentColor)
+                    }
+                }
+                Spacer()
             }
-            VStack(alignment: .leading, spacing: 4) {
+            
+            Divider().background(Color.white.opacity(0.1))
+            
+            VStack(alignment: .leading, spacing: 8) {
+                Text("CURRENT BALANCE")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(.glassText)
+                    .kerning(1.2)
+                
                 Text(wallet.formattedAmount())
-                    .font(.system(size: 28, weight: .bold, design: .rounded))
-                    .foregroundStyle(wallet.accentColor).minimumScaleFactor(0.5).lineLimit(1)
-                HStack(spacing: 6) {
-                    Text(wallet.currency.rawValue)
-                        .font(.caption2.bold()).padding(.horizontal, 6).padding(.vertical, 2)
-                        .background(Color(white: 0.12), in: Capsule()).foregroundStyle(.glassText)
-                    Text(wallet.isPositive ? "Asset" : "Liability")
-                        .font(.caption2).foregroundStyle(wallet.accentColor.opacity(0.8))
-                }
+                    .font(.system(size: 36, weight: .bold, design: .rounded))
+                    .foregroundStyle(wallet.accentColor)
+                    .minimumScaleFactor(0.5)
+                    .lineLimit(1)
             }
-            Spacer()
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(18).glassEffect(in: .rect(cornerRadius: 20))
+        .padding(24)
+        .background(
+            ZStack {
+                Color(white: 0.12)
+                LinearGradient(
+                    colors: [wallet.accentColor.opacity(0.1), Color.clear],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            }
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 26))
+        .overlay(
+            RoundedRectangle(cornerRadius: 26)
+                .stroke(Color.white.opacity(0.1), lineWidth: 1)
+        )
     }
 
     // MARK: Transaction Header
     private var transactionHeader: some View {
         HStack {
-            Text("TRANSACTIONS")
-                .font(.caption.weight(.semibold)).foregroundStyle(.glassText).kerning(1.2)
+            Label("TRANSACTIONS", systemImage: "arrow.up.arrow.down")
+                .font(.caption.weight(.bold)).foregroundStyle(.glassText).kerning(1.2)
             Spacer()
-            Text("\(transactions.count) transactions")
-                .font(.caption2).foregroundStyle(.dimText)
+            Text("\(transactions.count)")
+                .font(.caption2.bold())
+                .padding(.horizontal, 8)
+                .padding(.vertical, 2)
+                .background(Color.white.opacity(0.1), in: Capsule())
+                .foregroundStyle(.dimText)
         }
         .padding(.horizontal, 4)
     }
 
     // MARK: Empty State
     private var emptyTransactions: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "tray").font(.system(size: 36)).foregroundStyle(Color(white: 0.25))
-            Text("No transactions yet").font(.subheadline).foregroundStyle(.glassText)
+        VStack(spacing: 16) {
+            ZStack {
+                Circle()
+                    .fill(Color.white.opacity(0.05))
+                    .frame(width: 72, height: 72)
+                Image(systemName: "tray.and.arrow.down.fill")
+                    .font(.system(size: 28))
+                    .foregroundStyle(.dimText)
+            }
+            Text("No transactions yet")
+                .font(.subheadline.bold())
+                .foregroundStyle(.white)
+            Text("Your activity will be listed here.")
+                .font(.caption)
+                .foregroundStyle(.glassText)
         }
-        .frame(maxWidth: .infinity).padding(40)
-        .glassEffect(in: .rect(cornerRadius: 18))
+        .frame(maxWidth: .infinity).padding(48)
+        .glassEffect(in: .rect(cornerRadius: 24))
     }
 }
 
@@ -189,25 +245,44 @@ struct TransactionRow: View {
     let currency: Currency
 
     var body: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: 16) {
             ZStack {
-                Circle().fill(tx.type.color.opacity(0.12)).frame(width: 42, height: 42)
-                Image(systemName: tx.type.icon).font(.subheadline).foregroundStyle(tx.type.color)
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(tx.type.color.opacity(0.12))
+                    .frame(width: 44, height: 44)
+                Image(systemName: tx.type.icon)
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(tx.type.color)
             }
-            VStack(alignment: .leading, spacing: 3) {
+            
+            VStack(alignment: .leading, spacing: 4) {
                 Text(tx.category.isEmpty ? tx.type.rawValue : tx.category)
-                    .font(.subheadline.weight(.medium)).foregroundStyle(.white).lineLimit(1)
-                if !tx.note.isEmpty {
-                    Text(tx.note).font(.caption).foregroundStyle(.glassText).lineLimit(1)
-                }
-                Text(tx.date, style: .date).font(.caption2).foregroundStyle(.dimText)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                
+                Text(tx.date.formatted(date: .abbreviated, time: .omitted))
+                    .font(.system(size: 10))
+                    .foregroundStyle(.dimText)
             }
+            
             Spacer()
-            Text(tx.formattedAmount(currency: currency))
-                .font(.subheadline.weight(.semibold)).foregroundStyle(tx.type.color)
-                .lineLimit(1).minimumScaleFactor(0.7)
+            
+            VStack(alignment: .trailing, spacing: 4) {
+                Text(tx.formattedAmount(currency: currency))
+                    .font(.subheadline.bold())
+                    .foregroundStyle(tx.type.color)
+                
+                if !tx.note.isEmpty {
+                    Text(tx.note)
+                        .font(.system(size: 9))
+                        .foregroundStyle(.glassText)
+                        .lineLimit(1)
+                }
+            }
         }
-        .padding(.horizontal, 16).padding(.vertical, 12)
-        .glassEffect(in: .rect(cornerRadius: 16))
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .glassEffect(in: .rect(cornerRadius: 18))
     }
 }

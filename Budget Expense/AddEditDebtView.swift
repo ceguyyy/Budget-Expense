@@ -44,30 +44,70 @@ struct AddEditDebtView: View {
                         }
 
                         formSection {
-                            // Currency toggle
-                            HStack {
+                            // Currency Dropdown
+                            VStack(alignment: .leading, spacing: 8) {
                                 Label("Currency", systemImage: "dollarsign.circle")
                                     .foregroundStyle(.white.opacity(0.7))
                                     .font(.subheadline)
-                                Spacer()
-                                Picker("", selection: $currency) {
-                                    ForEach(Currency.allCases, id: \.self) { c in
-                                        Text(c.rawValue).tag(c)
+                                
+                                Menu {
+                                    ForEach(Currency.allCases, id: \.self) { curr in
+                                        Button {
+                                            currency = curr
+                                        } label: {
+                                            HStack(spacing: 8) {
+                                                Text(curr.flag)
+                                                    .font(.body)
+                                                Text(curr.name)
+                                                Text("(\(curr.rawValue))")
+                                                    .foregroundStyle(.secondary)
+                                                Spacer()
+                                                Text(curr.symbol)
+                                                    .foregroundStyle(.secondary)
+                                            }
+                                        }
                                     }
+                                } label: {
+                                    HStack(spacing: 10) {
+                                        Text(currency.flag)
+                                            .font(.title3)
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(currency.name)
+                                                .foregroundStyle(.white)
+                                                .font(.body)
+                                            Text(currency.rawValue)
+                                                .font(.caption2)
+                                                .foregroundStyle(.white.opacity(0.6))
+                                        }
+                                        Spacer()
+                                        Text(currency.symbol)
+                                            .foregroundStyle(.white.opacity(0.6))
+                                            .font(.headline)
+                                        Image(systemName: "chevron.up.chevron.down")
+                                            .font(.caption)
+                                            .foregroundStyle(.white.opacity(0.4))
+                                    }
+                                    .padding(12)
+                                    .background(Color(white: 0.15))
+                                    .clipShape(RoundedRectangle(cornerRadius: 10))
                                 }
-                                .pickerStyle(.segmented)
-                                .frame(width: 120)
+                                .buttonStyle(.plain)
                             }
 
                             Divider().background(.white.opacity(0.15))
 
                             fieldRow(label: "Amount", systemImage: "banknote") {
-                                TextField("0", text: $amountStr)
-                                    .foregroundStyle(.white)
-                                    .multilineTextAlignment(.trailing)
-                                    #if os(iOS)
-                                    .keyboardType(.decimalPad)
-                                    #endif
+                                HStack(spacing: 8) {
+                                    Text(currency.symbol)
+                                        .foregroundStyle(.white.opacity(0.6))
+                                        .font(.subheadline)
+                                    TextField("0", text: $amountStr)
+                                        .foregroundStyle(.white)
+                                        .multilineTextAlignment(.trailing)
+                                        #if os(iOS)
+                                        .keyboardType(.decimalPad)
+                                        #endif
+                                }
                             }
                         }
 

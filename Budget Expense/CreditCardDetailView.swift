@@ -77,49 +77,103 @@ struct CreditCardDetailView: View {
     // MARK: Card Hero (visual card)
 
     private func cardHeroView(_ card: CreditCard) -> some View {
-        ZStack(alignment: .bottomLeading) {
-            RoundedRectangle(cornerRadius: 20)
-                .fill(LinearGradient(colors: [card.cardColor, card.cardColor.opacity(0.55)],
-                                     startPoint: .topLeading, endPoint: .bottomTrailing))
-                .frame(height: 170)
-
-            VStack(alignment: .leading, spacing: 0) {
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(card.bank).font(.caption.weight(.semibold)).foregroundStyle(.white.opacity(0.75))
-                        Text(card.name).font(.headline.bold()).foregroundStyle(.white)
-                    }
-                    Spacer()
-                    Image(systemName: "creditcard.fill").font(.title2).foregroundStyle(.white.opacity(0.6))
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(card.bank)
+                        .font(.subheadline.bold())
+                        .foregroundStyle(.white.opacity(0.8))
+                    Text(card.name)
+                        .font(.title2.bold())
+                        .foregroundStyle(.white)
                 }
                 Spacer()
-                HStack(alignment: .bottom) {
+                
+                // Chip icon
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(LinearGradient(colors: [Color(white: 0.9), Color(white: 0.6)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                    .frame(width: 45, height: 32)
+                    .overlay(
+                        VStack(spacing: 5) {
+                            ForEach(0..<4) { _ in
+                                Rectangle().fill(Color.black.opacity(0.1)).frame(height: 1.2)
+                            }
+                        }
+                    )
+            }
+            .padding(.bottom, 32)
+            
+            HStack(alignment: .bottom) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("TOTAL OUTSTANDING")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(.white.opacity(0.6))
+                        .kerning(1.2)
+                    Text(formatCurrency(card.totalUsedLimit, currency: card.currency))
+                        .font(.title.bold())
+                        .foregroundStyle(.white)
+                }
+                Spacer()
+                Image(systemName: "creditcard.fill")
+                    .font(.title)
+                    .foregroundStyle(.white.opacity(0.2))
+            }
+            
+            Spacer(minLength: 24)
+            
+            VStack(spacing: 10) {
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(Color.black.opacity(0.2))
+                            .frame(height: 8)
+                        
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(LinearGradient(colors: [.white, .white.opacity(0.8)], startPoint: .leading, endPoint: .trailing))
+                            .frame(width: geo.size.width * card.usedPercent, height: 8)
+                    }
+                }
+                .frame(height: 8)
+                
+                HStack {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("LIMIT").font(.caption2).foregroundStyle(.white.opacity(0.6))
-                        Text(formatIDR(card.limit)).font(.subheadline.bold()).foregroundStyle(.white)
+                        Text("LIMIT").font(.system(size: 9, weight: .bold)).foregroundStyle(.white.opacity(0.5))
+                        Text(formatCurrency(card.limit, currency: card.currency)).font(.caption.bold()).foregroundStyle(.white.opacity(0.9))
                     }
                     Spacer()
                     VStack(alignment: .trailing, spacing: 2) {
-                        Text("REMAINING").font(.caption2).foregroundStyle(.white.opacity(0.6))
-                        Text(formatIDR(card.remainingLimit))
-                            .font(.subheadline.bold())
-                            .foregroundStyle(card.usedPercent > 0.8 ? Color(red: 1, green: 0.5, blue: 0.5) : .white)
+                        Text("REMAINING").font(.system(size: 9, weight: .bold)).foregroundStyle(.white.opacity(0.5))
+                        Text(formatCurrency(card.remainingLimit, currency: card.currency))
+                            .font(.caption.bold())
+                            .foregroundStyle(card.usedPercent > 0.8 ? Color.neonRed : .white.opacity(0.9))
                     }
                 }
-                .padding(.top, 6)
-
-                GeometryReader { geo in
-                    ZStack(alignment: .leading) {
-                        RoundedRectangle(cornerRadius: 3).fill(.white.opacity(0.2)).frame(height: 5)
-                        RoundedRectangle(cornerRadius: 3)
-                            .fill(card.usedPercent > 0.8 ? Color(red: 1, green: 0.4, blue: 0.4) : .white)
-                            .frame(width: geo.size.width * card.usedPercent, height: 5)
-                    }
-                }
-                .frame(height: 5).padding(.top, 10)
             }
-            .padding(20)
         }
+        .padding(24)
+        .background(
+            ZStack {
+                LinearGradient(
+                    colors: [card.cardColor, card.cardColor.opacity(0.75)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                
+                // Reflections
+                Capsule()
+                    .fill(Color.white.opacity(0.1))
+                    .frame(width: 250, height: 100)
+                    .rotationEffect(.degrees(-35))
+                    .offset(x: 100, y: -80)
+                
+                Circle()
+                    .fill(Color.black.opacity(0.08))
+                    .frame(width: 200, height: 200)
+                    .offset(x: -100, y: 80)
+            }
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 24))
+        .shadow(color: card.cardColor.opacity(0.4), radius: 12, x: 0, y: 6)
     }
 
     // MARK: Billing Info
@@ -129,28 +183,47 @@ struct CreditCardDetailView: View {
         let due = store.billingCycleDueDate(for: card)
         let df = DateFormatter(); df.dateFormat = "d MMM"
 
-        return VStack(spacing: 12) {
+        return VStack(spacing: 16) {
             HStack {
-                infoItem("Cycle", "\(df.string(from: cycleStart)) → \(df.string(from: cycleEnd))", "calendar")
-                Divider().background(Color(white: 0.15)).frame(height: 30)
-                infoItem("Due Date", df.string(from: due), "exclamationmark.circle")
+                infoItem("Statement Cycle", "\(df.string(from: cycleStart)) - \(df.string(from: cycleEnd))", "calendar")
+                Divider().background(Color.white.opacity(0.1)).frame(height: 30)
+                infoItem("Due Date", df.string(from: due), "clock.badge.exclamationmark")
+                    .foregroundStyle(isNearDue(due) ? Color.neonRed : .white)
             }
-            Divider().background(Color(white: 0.15))
-            HStack {
-                infoItem("Cycle Bill", formatIDR(store.currentCycleBill(for: card)), "creditcard")
-                Divider().background(Color(white: 0.15)).frame(height: 30)
-                infoItem("Monthly Installment", formatIDR(store.currentMonthInstallments(for: card)), "clock")
-            }
-            Divider().background(Color(white: 0.15))
-            HStack {
-                Text("TOTAL DUE THIS MONTH")
-                    .font(.caption.weight(.semibold)).foregroundStyle(.glassText)
-                Spacer()
-                Text(formatIDR(store.totalDueThisMonth(for: card)))
-                    .font(.headline.bold()).foregroundStyle(.neonRed)
+            
+            Divider().background(Color.white.opacity(0.1))
+            
+            VStack(spacing: 12) {
+                HStack {
+                    Text("Cycle Transactions").font(.caption).foregroundStyle(.glassText)
+                    Spacer()
+                    Text(formatCurrency(store.currentCycleBill(for: card), currency: card.currency)).font(.subheadline.bold())
+                }
+                HStack {
+                    Text("Monthly Installments").font(.caption).foregroundStyle(.glassText)
+                    Spacer()
+                    Text(formatCurrency(store.currentMonthInstallments(for: card), currency: card.currency)).font(.subheadline.bold())
+                }
+                
+                HStack {
+                    Text("TOTAL DUE THIS MONTH")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.white)
+                    Spacer()
+                    Text(formatCurrency(store.totalDueThisMonth(for: card), currency: card.currency))
+                        .font(.title3.bold())
+                        .foregroundStyle(Color.neonRed)
+                }
+                .padding(.top, 4)
             }
         }
-        .padding(18).glassEffect(in: .rect(cornerRadius: 20))
+        .padding(20)
+        .glassEffect(in: .rect(cornerRadius: 22))
+    }
+    
+    private func isNearDue(_ date: Date) -> Bool {
+        let days = Calendar.current.dateComponents([.day], from: Date(), to: date).day ?? 10
+        return days <= 3 && days >= 0
     }
 
     // MARK: Pay Button
@@ -186,7 +259,7 @@ struct CreditCardDetailView: View {
                 .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 20, trailing: 16))
         } else {
             ForEach(txs) { tx in
-                CCTransactionRow(tx: tx)
+                CCTransactionRow(tx: tx, currency: card.currency)
                     // Context Menu
                     .contextMenu {
                         Button { editTxTarget = tx }
@@ -231,7 +304,7 @@ struct CreditCardDetailView: View {
                 .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 20, trailing: 16))
         } else {
             ForEach(active) { inst in
-                InstallmentRow(inst: inst)
+                InstallmentRow(inst: inst, currency: card.currency)
                     // Context Menu
                     .contextMenu {
                         Button { editInstTarget = inst }
@@ -258,7 +331,7 @@ struct CreditCardDetailView: View {
         if !done.isEmpty {
             DisclosureGroup {
                 ForEach(done) { inst in 
-                    InstallmentRow(inst: inst)
+                    InstallmentRow(inst: inst, currency: card.currency)
                         .padding(.vertical, 4)
                 }
             } label: {
@@ -303,31 +376,40 @@ struct CreditCardDetailView: View {
 
 struct CCTransactionRow: View {
     let tx: CCTransaction
+    let currency: Currency
     var body: some View {
         HStack(spacing: 14) {
             ZStack {
-                Circle().fill(tx.isPaid ? Color.neonGreen.opacity(0.10) : Color.neonRed.opacity(0.10))
-                    .frame(width: 42, height: 42)
-                Image(systemName: tx.isPaid ? "checkmark.circle.fill" : "creditcard.fill")
-                    .font(.subheadline).foregroundStyle(tx.isPaid ? .neonGreen : .neonRed)
+                Circle().fill(tx.isPaid ? Color.neonGreen.opacity(0.12) : Color.neonRed.opacity(0.12))
+                    .frame(width: 44, height: 44)
+                Image(systemName: tx.isPaid ? "checkmark.circle.fill" : "cart.fill")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(tx.isPaid ? .neonGreen : .neonRed)
             }
             VStack(alignment: .leading, spacing: 3) {
-                Text(tx.description).font(.subheadline.weight(.medium)).foregroundStyle(.white).lineLimit(1)
-                if !tx.category.isEmpty {
-                    Text(tx.category).font(.caption2).foregroundStyle(.glassText)
+                Text(tx.description).font(.subheadline.weight(.semibold)).foregroundStyle(.white).lineLimit(1)
+                HStack(spacing: 6) {
+                    if !tx.category.isEmpty {
+                        Text(tx.category).font(.caption2).foregroundStyle(.glassText)
+                        Circle().fill(Color.white.opacity(0.2)).frame(width: 3, height: 3)
+                    }
+                    Text(tx.date, style: .date).font(.caption2).foregroundStyle(.dimText)
                 }
-                Text(tx.date, style: .date).font(.caption2).foregroundStyle(.dimText)
             }
             Spacer()
             VStack(alignment: .trailing, spacing: 3) {
-                Text(formatIDR(tx.amount)).font(.subheadline.weight(.semibold))
-                    .foregroundStyle(tx.isPaid ? .neonGreen : .neonRed)
+                Text(formatCurrency(tx.amount, currency: currency)).font(.subheadline.bold())
+                    .foregroundStyle(tx.isPaid ? .neonGreen : .white)
                 Text(tx.isPaid ? "Paid" : "Unpaid")
-                    .font(.caption2).foregroundStyle(tx.isPaid ? .neonGreen.opacity(0.7) : .dimText)
+                    .font(.system(size: 9, weight: .bold))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(tx.isPaid ? Color.neonGreen.opacity(0.15) : Color.white.opacity(0.05), in: Capsule())
+                    .foregroundStyle(tx.isPaid ? .neonGreen : .dimText)
             }
         }
-        .padding(.horizontal, 16).padding(.vertical, 12)
-        .glassEffect(in: .rect(cornerRadius: 16))
+        .padding(.horizontal, 16).padding(.vertical, 14)
+        .glassEffect(in: .rect(cornerRadius: 18))
     }
 }
 
@@ -335,31 +417,33 @@ struct CCTransactionRow: View {
 
 struct InstallmentRow: View {
     let inst: Installment
+    let currency: Currency
     var body: some View {
         HStack(spacing: 14) {
             ZStack {
-                Circle().fill(Color(red: 0.92, green: 0.66, blue: 0.10).opacity(0.12)).frame(width: 42, height: 42)
+                Circle().fill(Color(red: 0.92, green: 0.66, blue: 0.10).opacity(0.12)).frame(width: 44, height: 44)
                 Image(systemName: inst.isCompleted ? "checkmark.circle.fill" : "clock.fill")
-                    .font(.subheadline)
+                    .font(.system(size: 16, weight: .bold))
                     .foregroundStyle(inst.isCompleted ? .neonGreen : Color(red: 0.92, green: 0.66, blue: 0.10))
             }
             VStack(alignment: .leading, spacing: 3) {
-                Text(inst.description).font(.subheadline.weight(.medium)).foregroundStyle(.white).lineLimit(1)
-                Text("\(inst.paidMonths)/\(inst.totalMonths) months · Left \(formatIDR(inst.remainingAmount))")
+                Text(inst.description).font(.subheadline.weight(.semibold)).foregroundStyle(.white).lineLimit(1)
+                Text("\(inst.paidMonths)/\(inst.totalMonths) months · Left \(formatCurrency(inst.remainingAmount, currency: currency))")
                     .font(.caption2).foregroundStyle(.glassText)
             }
             Spacer()
             VStack(alignment: .trailing, spacing: 3) {
-                Text(inst.isCompleted ? "Paid off" : "/month")
-                    .font(.caption2).foregroundStyle(.dimText)
                 if !inst.isCompleted {
-                    Text(formatIDR(inst.monthlyPayment))
-                        .font(.subheadline.weight(.semibold))
+                    Text(formatCurrency(inst.monthlyPayment, currency: currency))
+                        .font(.subheadline.bold())
                         .foregroundStyle(Color(red: 0.92, green: 0.66, blue: 0.10))
+                    Text("/month").font(.system(size: 9)).foregroundStyle(.dimText)
+                } else {
+                    Text("Completed").font(.caption2.bold()).foregroundStyle(.neonGreen)
                 }
             }
         }
-        .padding(.horizontal, 16).padding(.vertical, 12)
-        .glassEffect(in: .rect(cornerRadius: 16))
+        .padding(.horizontal, 16).padding(.vertical, 14)
+        .glassEffect(in: .rect(cornerRadius: 18))
     }
 }
