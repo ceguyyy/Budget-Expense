@@ -795,9 +795,10 @@ struct DashboardView: View {
                         Button {
                             vm.showHealthExplanation = true
                         } label: {
-                            Image(systemName: "info.circle.fill")
+                            Image(systemName: "apple.intelligence")
                                 .font(.title3)
                                 .foregroundStyle(vm.healthScoreColor.opacity(0.8))
+                                .symbolEffect(.breathe)
                         }
                         .sheet(isPresented: Binding(get: { vm.showHealthExplanation }, set: { vm.showHealthExplanation = $0 })) {
                             FinancialHealthExplanationSheet(vm: vm)
@@ -2522,7 +2523,7 @@ struct FinancialHealthExplanationSheet: View {
                         .lineSpacing(4)
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(16)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .frame(maxWidth: .infinity, minHeight: 0, maxHeight: .infinity, alignment: .leading)
                         .background(Color.purple.opacity(0.1))
                         .clipShape(RoundedRectangle(cornerRadius: 18))
                         .overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.purple.opacity(0.2), lineWidth: 1))

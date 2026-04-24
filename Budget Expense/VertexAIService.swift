@@ -123,8 +123,8 @@ enum VertexAIService {
                 ]
             ],
             "generationConfig": [
-                "temperature": 0.7,
-                "maxOutputTokens": 1000,
+                "temperature": 0.2,
+                "maxOutputTokens": 4096,
                 "topP": 0.95
             ]
         ]

@@ -16,6 +16,10 @@
 	<array>
 		<string>stockbit</string>
 	</array>
+	<key>NSCalendarsUsageDescription</key>
+	<string>This app needs access to your calendar to sync payment due dates and reminders.</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>This app needs full calendar access to create and manage payment reminders in your Google Calendar.</string>
 	<key>UIFileSharingEnabled</key>
 	<true/>
 	<key>UILaunchScreen</key>

@@ -8,6 +8,10 @@ import SwiftUI
 struct CreditCardDetailView: View {
     let cardId: UUID
     @Environment(AppStore.self) private var store
+    @Environment(\.calendarManager) private var calendarManager
+    
+    @State private var showCalendarAlert = false
+    @State private var calendarAlertMsg = ""
     
     @State private var showAddTx     = false
     @State private var editTxTarget: CCTransaction?
@@ -215,10 +219,49 @@ struct CreditCardDetailView: View {
                         .foregroundStyle(Color.neonRed)
                 }
                 .padding(.top, 4)
+                
+                Button {
+                    Task {
+                        let (start, end) = store.billingCycleDates(for: card)
+                        let dueDate = store.billingCycleDueDate(for: card)
+                        let totalDue = formatCurrency(store.totalDueThisMonth(for: card), currency: card.currency)
+                        
+                        print("🛠 DEBUG: Preparing CC Calendar Sync")
+                        print("Card: \(card.bank) - \(card.name)")
+                        print("Due: \(dueDate)")
+                        
+                        let success = await calendarManager.syncToGoogleCalendar(
+                            title: "\(card.bank) - \(card.name)",
+                            dueDate: dueDate,
+                            notes: "Billing Cycle: \(df.string(from: start)) - \(df.string(from: end))\nTotal Due: \(totalDue)"
+                        )
+                        calendarAlertMsg = success ? "Due date synced to your calendar!" : "Failed to sync to calendar."
+                        showCalendarAlert = true
+                    }
+                } label: {
+                    HStack {
+                        Image(systemName: "calendar.badge.plus")
+                        Text("Sync Due Date to Calendar")
+                    }
+                    .font(.caption.bold())
+                    .foregroundStyle(.blue)
+                    .padding(.top, 4)
+                }
+                .buttonStyle(.plain)
             }
         }
         .padding(20)
         .glassEffect(in: .rect(cornerRadius: 22))
+        .alert("Calendar Sync", isPresented: $showCalendarAlert) {
+            Button("OK", role: .cancel) { }
+            if !calendarManager.isAuthorized {
+                Button("Settings") {
+                    calendarManager.openSettings()
+                }
+            }
+        } message: {
+            Text(calendarAlertMsg)
+        }
     }
     
     private func isNearDue(_ date: Date) -> Bool {

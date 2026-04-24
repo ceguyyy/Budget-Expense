@@ -13,6 +13,7 @@ struct SettingView: View {
     @Environment(\.authenticationManager) private var authManager
     @Environment(\.appleSignInManager) private var signInManager
     @Environment(\.cloudKitManager) private var cloudKitManager
+    @Environment(\.calendarManager) private var calendarManager
     
     @State private var showingExporter = false
     @State private var exportURL: URL?
@@ -26,6 +27,13 @@ struct SettingView: View {
     @State private var isSyncing = false
     @State private var showSyncSuccess = false
     @State private var showRestoreConfirmation = false
+    
+    // Calendar Config
+    @State private var showCalendarConfig = false
+    
+    // Email Input
+    @State private var showEmailInput = false
+    @State private var inputEmail = ""
     
     // JSON Export/Import
     @State private var showingJSONExporter = false
@@ -43,7 +51,7 @@ struct SettingView: View {
             Section(header: Text("Account").foregroundStyle(.glassText)) {
                 if signInManager.isSignedIn {
                     // Signed In State
-                    VStack(alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading, spacing: 12) {
                         HStack {
                             Image(systemName: "person.crop.circle.fill")
                                 .font(.title)
@@ -58,12 +66,28 @@ struct SettingView: View {
                                     Text(email)
                                         .font(.caption)
                                         .foregroundStyle(.glassText)
+                                } else {
+                                    Text("No email provided")
+                                        .font(.caption)
+                                        .foregroundStyle(.dimText)
                                 }
                             }
                             
                             Spacer()
+                            
+                            Button {
+                                inputEmail = signInManager.userEmail ?? ""
+                                showEmailInput = true
+                            } label: {
+                                Image(systemName: "pencil.circle.fill")
+                                    .font(.title2)
+                                    .foregroundStyle(.blue)
+                            }
+                            .buttonStyle(.plain)
                         }
                         .padding(.vertical, 8)
+                        
+                        Divider().background(Color.white.opacity(0.1))
                         
                         Button {
                             signInManager.signOut()
@@ -98,6 +122,34 @@ struct SettingView: View {
                     }
                     .listRowBackground(Color(white: 0.12))
                 }
+            }
+            
+            // MARK: - Integrations Section
+            Section(header: Text("Integrations").foregroundStyle(.glassText)) {
+                Button {
+                    showCalendarConfig = true
+                } label: {
+                    HStack {
+                        Image(systemName: "calendar.badge.plus")
+                            .foregroundStyle(.blue)
+                            .frame(width: 24)
+                        
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Calendar Integration")
+                                .foregroundStyle(.white)
+                            Text(calendarManager.isAuthorized ? (calendarManager.isSyncEnabled ? "Connected & Active" : "Paused") : "Connect for free-tier syncing")
+                                .font(.caption2)
+                                .foregroundStyle(calendarManager.isAuthorized ? (calendarManager.isSyncEnabled ? .neonGreen : .orange) : .dimText)
+                        }
+                        
+                        Spacer()
+                        
+                        Image(systemName: "chevron.right")
+                            .font(.caption)
+                            .foregroundStyle(.gray)
+                    }
+                }
+                .listRowBackground(Color(white: 0.12))
             }
             
             // MARK: - iCloud Sync Section
@@ -359,13 +411,16 @@ struct SettingView: View {
             }
             exportURL = nil
         }
-        .alert("Export Successful", isPresented: $showSuccessAlert) {
+        .alert("Calendar Sync", isPresented: $showSuccessAlert) {
             Button("OK", role: .cancel) { }
         } message: {
-            Text("Your data has been exported successfully.")
+            Text(errorMessage)
         }
-        .alert("Export Failed", isPresented: $showErrorAlert) {
-            Button("OK", role: .cancel) { }
+        .alert("Calendar Access Denied", isPresented: $showErrorAlert) {
+            Button("Cancel", role: .cancel) { }
+            Button("Settings") {
+                calendarManager.openSettings()
+            }
         } message: {
             Text(errorMessage)
         }
@@ -380,6 +435,10 @@ struct SettingView: View {
         }
         .sheet(isPresented: $showSignInSheet) {
             AppleSignInSheet()
+        }
+        .sheet(isPresented: $showCalendarConfig) {
+            CalendarConfigurationSheet()
+                .environment(\.calendarManager, calendarManager)
         }
         .alert("Backup Successful", isPresented: $showSyncSuccess) {
             Button("OK", role: .cancel) { }
@@ -447,6 +506,21 @@ struct SettingView: View {
             }
         } message: {
             Text("This will replace all current data with data from the backup file. This action cannot be undone.")
+        }
+        .alert("Update Email", isPresented: $showEmailInput) {
+            TextField("Email Address", text: $inputEmail)
+                .keyboardType(.emailAddress)
+                .autocorrectionDisabled()
+                .textInputAutocapitalization(.never)
+            
+            Button("Cancel", role: .cancel) { }
+            Button("Save") {
+                signInManager.updateEmail(inputEmail)
+                showSuccessAlert = true
+                errorMessage = "Your email has been updated."
+            }
+        } message: {
+            Text("Enter the email address you want to use for this account.")
         }
         // Split Bill Detail Sheet
         .sheet(isPresented: $showSplitBillDetail) {
@@ -1748,6 +1822,170 @@ struct BaseCurrencySelectorView: View {
         let generator = UIImpactFeedbackGenerator(style: .medium)
         generator.impactOccurred()
         #endif
+    }
+}
+
+// MARK: - Calendar Configuration Sheet
+
+struct CalendarConfigurationSheet: View {
+    @Environment(AppStore.self) private var store
+    @Environment(\.calendarManager) private var calendarManager
+    @Environment(\.dismiss) private var dismiss
+    
+    @State private var isSyncing = false
+    @State private var syncResult: Int?
+    @State private var showResult = false
+    
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                Color.appBg.ignoresSafeArea()
+                
+                List {
+                    Section {
+                        VStack(spacing: 20) {
+                            ZStack {
+                                Circle()
+                                    .fill(Color.blue.opacity(0.1))
+                                    .frame(width: 80, height: 80)
+                                Image(systemName: "calendar.badge.plus")
+                                    .font(.system(size: 34))
+                                    .foregroundStyle(.blue)
+                            }
+                            
+                            VStack(spacing: 8) {
+                                Text("Calendar")
+                                    .font(.title2.bold())
+                                    .foregroundStyle(.white)
+                                Text("Manage your payment reminders and due dates directly in your calendar.")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.glassText)
+                                    .multilineTextAlignment(.center)
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 20)
+                        .listRowBackground(Color.clear)
+                    }
+                    
+                    Section(header: Text("Permission Status").foregroundStyle(.glassText)) {
+                        HStack {
+                            Image(systemName: calendarManager.isAuthorized ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
+                                .foregroundStyle(calendarManager.isAuthorized ? .neonGreen : .orange)
+                            Text(calendarManager.isAuthorized ? "Access Granted" : "Access Not Granted")
+                                .foregroundStyle(.white)
+                            Spacer()
+                            if !calendarManager.isAuthorized {
+                                Button("Enable") {
+                                    Task {
+                                        await calendarManager.requestAccess()
+                                    }
+                                }
+                                .font(.subheadline.bold())
+                                .foregroundStyle(.blue)
+                            }
+                        }
+                        .listRowBackground(Color(white: 0.12))
+                        
+                        if !calendarManager.isAuthorized {
+                            Button {
+                                calendarManager.openSettings()
+                            } label: {
+                                Label("Open System Settings", systemImage: "gear")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.blue)
+                            }
+                            .listRowBackground(Color(white: 0.12))
+                        }
+                    }
+                    
+                    if calendarManager.isAuthorized {
+                        Section(header: Text("Settings").foregroundStyle(.glassText)) {
+                            Toggle(isOn: Binding(
+                                get: { calendarManager.isSyncEnabled },
+                                set: { calendarManager.isSyncEnabled = $0 }
+                            )) {
+                                Label("Enable Calendar Sync", systemImage: "sync")
+                                    .foregroundStyle(.white)
+                            }
+                            .listRowBackground(Color(white: 0.12))
+                            .tint(.blue)
+                            
+                            Toggle(isOn: Binding(
+                                get: { calendarManager.isAlertEnabled },
+                                set: { calendarManager.isAlertEnabled = $0 }
+                            )) {
+                                Label("Add 30m Reminder", systemImage: "bell.fill")
+                                    .foregroundStyle(.white)
+                            }
+                            .listRowBackground(Color(white: 0.12))
+                            .tint(.blue)
+                        }
+                        
+                        Section(header: Text("Manual Sync").foregroundStyle(.glassText), footer: Text("Tapping this will immediately sync all current credit card due dates and outstanding debts to your default calendar.").foregroundStyle(.dimText)) {
+                            if let lastSync = calendarManager.lastSyncDate {
+                                HStack {
+                                    Label("Last Synced", systemImage: "clock.fill")
+                                        .foregroundStyle(.white)
+                                    Spacer()
+                                    Text(lastSync, style: .relative)
+                                        .font(.caption)
+                                        .foregroundStyle(.glassText)
+                                    Text("ago")
+                                        .font(.caption)
+                                        .foregroundStyle(.glassText)
+                                }
+                                .listRowBackground(Color(white: 0.12))
+                            }
+                            
+                            Button {
+                                Task {
+                                    isSyncing = true
+                                    syncResult = await calendarManager.syncAll(store: store)
+                                    isSyncing = false
+                                    showResult = true
+                                }
+                            } label: {
+                                HStack {
+                                    if isSyncing {
+                                        ProgressView().tint(.white).padding(.trailing, 8)
+                                        Text("Syncing all events...")
+                                    } else {
+                                        Label("Sync All Now", systemImage: "arrow.triangle.2.circlepath")
+                                    }
+                                    Spacer()
+                                }
+                                .font(.subheadline.bold())
+                                .foregroundStyle(.blue)
+                            }
+                            .disabled(isSyncing || !calendarManager.isSyncEnabled)
+                            .listRowBackground(Color(white: 0.12))
+                        }
+                        
+                        Section(footer: Text("When enabled, reminders will include a 30-minute alarm to ensure you never miss a payment.").foregroundStyle(.dimText)) {
+                            EmptyView()
+                        }
+                    }
+                }
+                .scrollContentBackground(.hidden)
+            }
+            .navigationTitle("Calendar Integration")
+            .navigationBarTitleDisplayMode(.inline)
+            .alert("Sync Complete", isPresented: $showResult) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                if let count = syncResult {
+                    Text("Successfully synced \(count) financial events to your calendar.")
+                } else {
+                    Text("Sync failed. Please check your permissions.")
+                }
+            }
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
     }
 }
 

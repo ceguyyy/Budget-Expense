@@ -64,10 +64,11 @@ struct DebtListView: View {
                     }
 
                     HStack(spacing: 0) {
-                        summaryItem("IDR", store.totalDebit, Color(red: 0.3, green: 0.6, blue: 1.0))
+                        summaryItem("TOTAL OUTSTANDING", store.totalDebit, Color(red: 0.3, green: 0.6, blue: 1.0))
                         Divider().background(Color.white.opacity(0.1)).frame(height: 30)
                         summaryItem("LIQUIDITY", store.liquidity, .neonGreen)
                     }
+
                 }
                 .padding(20)
                 .glassEffect(in: .rect(cornerRadius: 22))
@@ -278,8 +279,12 @@ struct DebtRow: View {
 
 struct DebtDetailView: View {
     @Environment(AppStore.self) private var store
+    @Environment(\.calendarManager) private var calendarManager
     @Environment(\.dismiss) private var dismiss
     @State private var showEdit = false
+    
+    @State private var showCalendarAlert = false
+    @State private var calendarAlertMsg = ""
     
     let debt: Debt
     
@@ -347,6 +352,43 @@ struct DebtDetailView: View {
                             }
                             
                             detailRow(label: "Note", value: debt.note.isEmpty ? "No notes added" : debt.note, icon: "note.text")
+                            
+                            if let due = debt.dueDate, !debt.isSettled {
+                                Divider().background(Color.white.opacity(0.08)).padding(.leading, 44)
+                                Button {
+                                    Task {
+                                        print("🛠 DEBUG: Preparing Debt Calendar Sync")
+                                        print("Person: \(debt.personName)")
+                                        print("Due: \(due)")
+                                        
+                                        let success = await calendarManager.syncToGoogleCalendar(
+                                            title: "Pay \(debt.personName)",
+                                            dueDate: due,
+                                            notes: "Amount: \(debt.formattedAmount())\nNote: \(debt.note)"
+                                        )
+                                        calendarAlertMsg = success ? "Due date synced to your calendar!" : "Failed to sync to calendar."
+                                        showCalendarAlert = true
+                                    }
+                                } label: {
+                                    HStack(spacing: 12) {
+                                        ZStack {
+                                            Circle()
+                                                .fill(Color.blue.opacity(0.1))
+                                                .frame(width: 32, height: 32)
+                                            Image(systemName: "calendar.badge.plus")
+                                                .font(.system(size: 12))
+                                                .foregroundStyle(.blue)
+                                        }
+                                        Text("Sync Due Date to Calendar")
+                                            .font(.subheadline.bold())
+                                            .foregroundStyle(.blue)
+                                        Spacer()
+                                    }
+                                    .padding(.vertical, 14)
+                                    .padding(.horizontal, 16)
+                                }
+                                .buttonStyle(.plain)
+                            }
                         }
                         .glassEffect(in: .rect(cornerRadius: 22))
                     }
@@ -399,6 +441,16 @@ struct DebtDetailView: View {
             }
         }
         .navigationTitle("Receivable Details")
+        .alert("Calendar Sync", isPresented: $showCalendarAlert) {
+            Button("OK", role: .cancel) { }
+            if !calendarManager.isAuthorized {
+                Button("Settings") {
+                    calendarManager.openSettings()
+                }
+            }
+        } message: {
+            Text(calendarAlertMsg)
+        }
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif

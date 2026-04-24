@@ -109,6 +109,7 @@ struct SplitBillView: View {
                             .background(Color.white.opacity(0.1))
                             .padding(.horizontal, 16)
                             
+                        currencySelector
                         descriptionField
                         categoryField
                         payerField
@@ -146,13 +147,15 @@ struct SplitBillView: View {
                 AddParticipantView(
                     participants: $participants,
                     totalAmount: totalAmount,
-                    splitMethod: splitMethod
+                    splitMethod: splitMethod,
+                    currencySymbol: currencySymbol
                 )
             }
             .sheet(isPresented: $showAddItem) {
                 AddReceiptItemView(
                     items: $items,
-                    participants: participants
+                    participants: participants,
+                    currencySymbol: currencySymbol
                 )
             }
             #if os(iOS)
@@ -256,6 +259,48 @@ struct SplitBillView: View {
                 lastLifecycleID = ""
                 print("🔄 SplitBill: Lifecycle reset on disappear")
             }
+        }
+    }
+    
+    private var currencySelector: some View {
+        field("CURRENCY", "dollarsign.circle") {
+            Menu {
+                ForEach(Currency.allCases, id: \.self) { curr in
+                    Button {
+                        currency = curr
+                    } label: {
+                        HStack {
+                            Text(curr.flag)
+                            Text(curr.name)
+                            Spacer()
+                            Text(curr.symbol)
+                        }
+                    }
+                }
+            } label: {
+                HStack {
+                    Text(currency.flag)
+                        .font(.title3)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(currency.name)
+                            .foregroundStyle(.white)
+                            .font(.body)
+                        Text(currency.rawValue)
+                            .font(.caption2)
+                            .foregroundStyle(.glassText)
+                    }
+                    Spacer()
+                    Text(currency.symbol)
+                        .foregroundStyle(.glassText)
+                        .font(.headline)
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.caption)
+                        .foregroundStyle(.dimText)
+                }
+                .padding(14)
+                .glassEffect(in: .rect(cornerRadius: 14))
+            }
+            .buttonStyle(.plain)
         }
     }
     
@@ -1222,6 +1267,7 @@ struct AddParticipantView: View {
     @Binding var participants: [SplitParticipant]
     let totalAmount: Double
     let splitMethod: SplitMethod
+    let currencySymbol: String
     
     @Environment(\.dismiss) private var dismiss
     
@@ -1264,7 +1310,7 @@ struct AddParticipantView: View {
                                 Slider(value: $percentage, in: 0...100, step: 1)
                                     .tint(.neonGreen)
                                 
-                                Text("\(Int(percentage))% = Rp \(formatNumber((percentage / 100.0) * totalAmount))")
+                                Text("\(Int(percentage))% = \(currencySymbol) \(formatNumber((percentage / 100.0) * totalAmount))")
                                     .font(.subheadline)
                                     .foregroundStyle(.glassText)
                             }
@@ -1279,7 +1325,7 @@ struct AddParticipantView: View {
                                 .kerning(0.8)
                             
                             HStack(spacing: 10) {
-                                Text("Rp")
+                                Text(currencySymbol)
                                     .font(.headline)
                                     .foregroundStyle(.glassText)
                                     .frame(minWidth: 24)
@@ -1366,6 +1412,7 @@ struct AddReceiptItemView: View {
     @Environment(\.dismiss) private var dismiss
     @Binding var items: [SplitItem]
     let participants: [SplitParticipant]
+    let currencySymbol: String
     
     @State private var name = ""
     @State private var priceText = ""
@@ -1406,6 +1453,10 @@ struct AddReceiptItemView: View {
                                 Divider().background(Color.white.opacity(0.1))
                                 
                                 HStack {
+                                    Text(currencySymbol)
+                                        .font(.subheadline)
+                                        .foregroundStyle(.glassText)
+                                    
                                     TextField("Price", text: $priceText)
                                         #if os(iOS)
                                         .keyboardType(.decimalPad)

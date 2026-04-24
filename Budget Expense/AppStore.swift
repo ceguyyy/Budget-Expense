@@ -141,11 +141,17 @@ struct CreditCard: Identifiable, Codable {
     var billingCycleDay: Int // 1–28: day new billing cycle starts
     var dueDay: Int          // payment due day
     var colorIndex: Int = 0
+    var customHexColor: String? = nil // ✅ Added support for custom colors
     var transactions: [CCTransaction] = []
     var installments: [Installment] = []
 
     var initials: String { String(bank.prefix(2)).uppercased() }
-    var cardColor: Color { CreditCard.palette[colorIndex % CreditCard.palette.count] }
+    var cardColor: Color {
+        if let hex = customHexColor {
+            return Color(hex: hex) ?? CreditCard.palette[colorIndex % CreditCard.palette.count]
+        }
+        return CreditCard.palette[colorIndex % CreditCard.palette.count]
+    }
 
     var totalOutstanding: Double {
         transactions.filter { !$0.isPaid }.reduce(0) { $0 + $1.amount }

@@ -13,6 +13,7 @@ struct Budget_ExpenseApp: App {
     @State private var categoryManager = CategoryManager()
     @State private var appleSignInManager = AppleSignInManager()
     @State private var cloudKitManager = CloudKitManager()
+    @State private var calendarManager = CalendarManager()
     @State private var permissionManager = PermissionManager()
     @State private var ocrDataManager = OCRDataManager()
     
@@ -26,6 +27,7 @@ struct Budget_ExpenseApp: App {
                 .environment(\.categoryManager, categoryManager)
                 .environment(\.appleSignInManager, appleSignInManager)
                 .environment(\.cloudKitManager, cloudKitManager)
+                .environment(\.calendarManager, calendarManager)
                 .environment(permissionManager)
                 .environment(\.ocrDataManager, ocrDataManager)
                 .ignoresSafeArea()

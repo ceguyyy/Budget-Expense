@@ -134,6 +134,11 @@ class AppleSignInManager {
     func getDisplayName() -> String {
         return userDisplayName ?? "User"
     }
+    
+    func updateEmail(_ email: String) {
+        self.userEmail = email
+        UserDefaults.standard.set(email, forKey: userEmailKey)
+    }
 }
 
 // MARK: - Environment Key

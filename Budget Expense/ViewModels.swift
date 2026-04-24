@@ -183,48 +183,52 @@ class DashboardViewModel {
         defer { isLoadingAI = false }
         
         let metrics = """
-        Net Worth: \(currencyManager.format(amount: totalNetWorth, currency: baseCurrency))
-        Debt-to-Asset Ratio: \(String(format: "%.1f%%", debtToAssetRatio))
-        Liquidity Ratio: \(String(format: "%.2fx", liquidityRatio))
-        Credit Utilization: \(String(format: "%.1f%%", creditUtilizationRatio))
-        Financial Health Score: \(financialHealthScore)/100
-        """
+                Net Worth: \(currencyManager.format(amount: totalNetWorth, currency: baseCurrency))
+                Debt-to-Asset Ratio: \(String(format: "%.1f%%", debtToAssetRatio))
+                Liquidity Ratio: \(String(format: "%.2fx", liquidityRatio))
+                Credit Utilization: \(String(format: "%.1f%%", creditUtilizationRatio))
+                Financial Health Score: \(financialHealthScore)/100
+                """
 
         let prompt = """
-        You are a certified financial advisor.
+                You are a highly strategic, upbeat, and interactive financial coach. 
 
-        Analyze the user's financial condition using the metrics below and generate 3–4 highly specific, data-driven recommendations.
+                Analyze the user's financial condition using the metrics below. Your goal is to tell them EXACTLY what to do next in a fun, straightforward way, without any confusing financial jargon.
 
-        STRICT INSTRUCTIONS:
-        - Base every recommendation ONLY on the provided metrics.
-        - Use clear financial benchmarks:
-          • Debt-to-Asset: <30% = healthy, 30–60% = moderate, >60% = risky
-          • Liquidity Ratio: <1.0 = weak, 1.0–2.0 = acceptable, >2.0 = strong
-          • Credit Utilization: <30% = good, 30–50% = caution, >50% = high risk
-        - If a metric is strong → suggest optimization.
-        - If weak → suggest correction with urgency.
-        - Avoid generic advice (e.g., "save more money").
+                STRICT INSTRUCTIONS:
+                - Base every recommendation ONLY on the provided metrics.
+                - Use clear financial benchmarks:
+                  • Debt-to-Asset: <30% = 🟢 Healthy, 30–60% = 🟡 Moderate, >60% = 🔴 Risky
+                  • Liquidity Ratio: <1.0 = 🔴 Weak, 1.0–2.0 = 🟡 Acceptable, >2.0 = 🟢 Strong
+                  • Credit Utilization: <30% = 🟢 Good, 30–50% = 🟡 Caution, >50% = 🔴 High Risk
+                - If a metric is strong → suggest ways to optimize and "level up."
+                - If weak → give an urgent, straightforward corrective action.
+                - Tone: Fun, motivating, interactive, and straight to the point. Give direct commands (e.g., "Do this first:").
 
-        FOR EACH RECOMMENDATION:
-        1. Metric Evaluated (clearly name it)
-        2. Current Assessment (interpret the number)
-        3. Actionable Strategy (specific steps with numbers, % or targets)
-        4. Expected Impact (what improvement will happen)
+                STRUCTURE YOUR RESPONSE AS FOLLOWS:
 
-        STYLE:
-        - Professional, concise, and practical
-        - No fluff or vague statements
-        - Use bullet points
-        - Prioritize highest-risk issues first
+                🔥 THE VIBE CHECK (Quick Summary)
+                Give a 1-2 sentence punchy summary of their overall financial health based on their score. 
 
-        OUTPUT LIMIT: Maximum 1000 words
+                🛠️ YOUR ACTION PLAN (Sort by highest risk first!)
+                For each metric, provide:
+                - 📊 Metric & Status: [Name of Metric] ([Value]) -> [Emoji Status from Benchmarks]
+                - 👉 What You Must Do: (1-2 clear, specific, straightforward steps with numbers or % targets)
+                - 🚀 The Payoff: (What exactly improves if they do this)
 
-        METRICS:
-        \(metrics)
-        """
+                🗓️ YOUR 1-YEAR GAME PLAN
+                Map out a fun, actionable 12-month timeline based on their biggest weak spots and strengths:
+                - 🎯 Months 1-3: Immediate Action (What needs fixing right now)
+                - 🏃‍♂️ Months 4-8: Building Momentum (Stabilizing and growing)
+                - 🚀 Months 9-12: Leveling Up (Optimizing net worth and looking ahead)
+
+                METRICS TO ANALYZE:
+                \(metrics)
+                """
         
         do {
             aiRecommendation = try await VertexAIService.getFinancialRecommendation(prompt: prompt)
+            print(aiRecommendation ?? "Error")
         } catch {
             aiRecommendation = "Failed to get AI recommendation: \(error.localizedDescription)"
         }

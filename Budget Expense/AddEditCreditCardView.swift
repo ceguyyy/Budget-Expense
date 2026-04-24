@@ -18,6 +18,7 @@ struct AddEditCreditCardView: View {
     @State private var billingDay     = 25
     @State private var dueDay         = 10
     @State private var colorIndex     = 0
+    @State private var selectedColor  = CreditCard.palette[0] // ✅ New custom color state
 
     private var isEditMode: Bool { editTarget != nil }
     private var canSave: Bool {
@@ -63,7 +64,9 @@ struct AddEditCreditCardView: View {
                                      limit: parsedLimit,
                                      currency: currency,  // ✅ Include currency
                                      billingCycleDay: billingDay,
-                                     dueDay: dueDay, colorIndex: colorIndex)
+                                     dueDay: dueDay, 
+                                     colorIndex: colorIndex,
+                                     customHexColor: selectedColor.hex)
         return ZStack(alignment: .bottomLeading) {
             RoundedRectangle(cornerRadius: 18)
                 .fill(LinearGradient(colors: [previewCard.cardColor, previewCard.cardColor.opacity(0.55)],
@@ -184,22 +187,42 @@ struct AddEditCreditCardView: View {
 
             // Color
             field("CARD COLOR", "paintpalette") {
-                HStack(spacing: 10) {
-                    ForEach(CreditCard.palette.indices, id: \.self) { i in
-                        Button { withAnimation { colorIndex = i } } label: {
-                            ZStack {
-                                Circle().fill(CreditCard.palette[i]).frame(width: 36, height: 36)
-                                if colorIndex == i {
-                                    Circle().stroke(.white, lineWidth: 2.5).frame(width: 36, height: 36)
-                                    Image(systemName: "checkmark").font(.caption.bold()).foregroundStyle(.white)
+                VStack(spacing: 12) {
+                    HStack(spacing: 10) {
+                        ForEach(CreditCard.palette.indices, id: \.self) { i in
+                            Button { 
+                                withAnimation { 
+                                    colorIndex = i
+                                    selectedColor = CreditCard.palette[i]
+                                } 
+                            } label: {
+                                ZStack {
+                                    Circle().fill(CreditCard.palette[i]).frame(width: 36, height: 36)
+                                    if colorIndex == i && selectedColor.hex == CreditCard.palette[i].hex {
+                                        Circle().stroke(.white, lineWidth: 2.5).frame(width: 36, height: 36)
+                                        Image(systemName: "checkmark").font(.caption.bold()).foregroundStyle(.white)
+                                    }
                                 }
                             }
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
+                        Spacer()
                     }
-                    Spacer()
+                    
+                    Divider().background(Color.white.opacity(0.1))
+                    
+                    ColorPicker(selection: $selectedColor, supportsOpacity: false) {
+                        Label("Custom Color", systemImage: "swatchpalette.fill")
+                            .font(.subheadline)
+                            .foregroundStyle(.white)
+                    }
+                    .onChange(of: selectedColor) { 
+                        // When user picks a custom color, we can set colorIndex to a high value 
+                        // so it doesn't conflict with the palette selection UI
+                        colorIndex = 999 
+                    }
                 }
-                .padding(12).glassEffect(in: .rect(cornerRadius: 14))
+                .padding(14).glassEffect(in: .rect(cornerRadius: 14))
             }
         }
     }
@@ -236,6 +259,12 @@ struct AddEditCreditCardView: View {
         billingDay = c.billingCycleDay
         dueDay     = c.dueDay
         colorIndex = c.colorIndex
+        
+        if let hex = c.customHexColor, let col = Color(hex: hex) {
+            selectedColor = col
+        } else {
+            selectedColor = c.cardColor
+        }
     }
 
     private func save() {
@@ -247,6 +276,7 @@ struct AddEditCreditCardView: View {
             currency: currency,  // ✅ Save currency
             billingCycleDay: billingDay, dueDay: dueDay,
             colorIndex: colorIndex,
+            customHexColor: selectedColor.hex, // ✅ Save custom hex
             transactions: editTarget?.transactions ?? [],
             installments: editTarget?.installments ?? []
         )
