@@ -411,7 +411,7 @@ struct SettingView: View {
             }
             exportURL = nil
         }
-        .alert("Calendar Sync", isPresented: $showSuccessAlert) {
+        .alert("Success", isPresented: $showSuccessAlert) {
             Button("OK", role: .cancel) { }
         } message: {
             Text(errorMessage)
@@ -1905,7 +1905,7 @@ struct CalendarConfigurationSheet: View {
                                 get: { calendarManager.isSyncEnabled },
                                 set: { calendarManager.isSyncEnabled = $0 }
                             )) {
-                                Label("Enable Calendar Sync", systemImage: "sync")
+                                Label("Enable Calendar Sync", systemImage: "arrow.trianglehead.2.clockwise.rotate.90")
                                     .foregroundStyle(.white)
                             }
                             .listRowBackground(Color(white: 0.12))
