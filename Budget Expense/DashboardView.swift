@@ -14,6 +14,12 @@ enum ChartRange: String, CaseIterable {
     case thisYear = "This Year"
 }
 
+// MARK: - CC Liability Mode Enum
+enum CCLiabilityMode: String, CaseIterable {
+    case total = "Total"
+    case monthly = "Monthly"
+}
+
 // MARK: - Exchange Rate Response (Dashboard-specific)
 struct DashboardExchangeRateResponse: Codable {
     let conversion_rates: [String: Double]?
@@ -66,7 +72,9 @@ struct DashboardView: View {
     
     // ✅ State for Swiping Cards, Show/Hide Balance, & Chart Filter
     @State private var currentCardIndex = 0
+    @State private var showBalanceBreakdown = false
     @AppStorage("showBalances") private var showBalances: Bool = true
+    @AppStorage("ccLiabilityMode") private var ccLiabilityMode: CCLiabilityMode = .total
     @State private var selectedChartRange: ChartRange = .last6Months
     @State private var viewModel: DashboardViewModel?
     
@@ -144,6 +152,16 @@ struct DashboardView: View {
                         .environment(store)
                 }
             }
+            .sheet(isPresented: $showBalanceBreakdown) {
+                BalanceBreakdownSheet(
+                    totalWalletBalance: totalWalletBalanceIDR,
+                    totalReceivables: totalReceivablesIDR,
+                    totalCCDebt: ccLiabilityMode == .total ? store.totalOutstandingCC : store.totalMonthlyPayable,
+                    totalNetWorth: totalNetWorthIDR,
+                    liabilityMode: $ccLiabilityMode
+                )
+                .environment(store)
+            }
             
             .task {
                 await fetchExchangeRateIfNeeded()
@@ -190,7 +208,8 @@ struct DashboardView: View {
     }
     
     private var totalNetWorthIDR: Double {
-        totalWalletBalanceIDR + totalReceivablesIDR - store.totalOutstandingCC
+        let ccLiability = ccLiabilityMode == .total ? store.totalOutstandingCC : store.totalMonthlyPayable
+        return totalWalletBalanceIDR + totalReceivablesIDR - ccLiability
     }
     
     private var totalWalletBalanceIDR: Double {
@@ -201,9 +220,10 @@ struct DashboardView: View {
     }
     
     private var totalReceivablesIDR: Double {
-        store.debts.filter { !$0.isSettled }.reduce(0) { sum, d in
-            let amountInBase = currencyManager.toBaseCurrency(amount: d.amount, from: d.currency)
-            return sum + amountInBase
+        if ccLiabilityMode == .total {
+            return store.totalReceivables
+        } else {
+            return store.totalReceivablesMonthly
         }
     }
     
@@ -419,26 +439,34 @@ struct DashboardView: View {
         HStack {
             ZStack {
                 RoundedRectangle(cornerRadius: 12)
-                    .fill(Color(red: 0.45, green: 0.2, blue: 0.9).opacity(0.2))
-                    .frame(width: 44, height: 44)
+                    .fill(Color.warmOrange)
+                    .frame(width: 42, height: 42)
                 Image("image_logo")
                     .resizable()
                     .scaledToFill()
-                    .frame(width: 28, height: 28)
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .frame(width: 26, height: 26)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
             }
             Spacer()
-            Text("Home")
-                .font(.headline.weight(.semibold))
-                .foregroundStyle(.white)
+            VStack(spacing: 1) {
+                Text("Dashboard")
+                    .font(.system(size: 17, weight: .black))
+                    .foregroundStyle(Color.warmCard)
+                Text(Date().formatted(.dateTime.weekday(.wide).day().month()))
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(Color.warmCard.opacity(0.45))
+            }
             Spacer()
-            HStack(spacing: 16) {
-                Button {
-                    withAnimation { showBalances.toggle() }
-                } label: {
+            Button {
+                withAnimation { showBalances.toggle() }
+            } label: {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Color.warmDark)
+                        .frame(width: 38, height: 38)
                     Image(systemName: showBalances ? "eye" : "eye.slash")
-                        .font(.title3)
-                        .foregroundStyle(.white)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(Color.warmCard)
                 }
             }
         }
@@ -453,39 +481,42 @@ struct DashboardView: View {
                 balanceCard(
                     title: "Total Balance",
                     amount: totalNetWorthIDR,
-                    gradient: [
-                        Color(red: 0.15, green: 0.15, blue: 0.25),
-                        Color(red: 0.25, green: 0.15, blue: 0.35),
-                        Color(red: 0.08, green: 0.08, blue: 0.15)
-                    ],
+                    cardColor: Color.warmCard,
+                    orbColors: [Color.warmOrange, Color(red: 0.18, green: 0.14, blue: 0.12)],
                     icon: "chart.line.uptrend.xyaxis",
-                    accentColor: totalNetWorthIDR >= 0 ? .neonGreen : .neonRed,
-                    badge: totalNetWorthIDR >= 0 ? "Positive" : "Negative"
-                ).tag(0)
-                
+                    accentColor: totalNetWorthIDR >= 0 ? Color.warmOrange : Color.neonRed,
+                    badge: ccLiabilityMode == .total ? "Total Liability" : "Monthly Due"
+                )
+                .tag(0)
+                .onTapGesture {
+                    showBalanceBreakdown = true
+                }
+                .contextMenu {
+                    Button(action: { ccLiabilityMode = .total }) {
+                        Label("Subtract Total CC Debt", systemImage: ccLiabilityMode == .total ? "checkmark.circle.fill" : "circle")
+                    }
+                    Button(action: { ccLiabilityMode = .monthly }) {
+                        Label("Subtract This Month's CC Due", systemImage: ccLiabilityMode == .monthly ? "checkmark.circle.fill" : "circle")
+                    }
+                }
+
                 balanceCard(
                     title: "Wallet Balance",
                     amount: totalWalletBalanceIDR,
-                    gradient: [
-                        Color(red: 0.05, green: 0.4, blue: 0.3),
-                        Color(red: 0.08, green: 0.5, blue: 0.35),
-                        Color(red: 0.02, green: 0.2, blue: 0.15)
-                    ],
+                    cardColor: Color(red: 0.18, green: 0.14, blue: 0.12),
+                    orbColors: [Color.warmOrange, Color.warmCard.opacity(0.15)],
                     icon: "wallet.bifold.fill",
-                    accentColor: .neonGreen,
+                    accentColor: Color.warmCard,
                     badge: "\(store.wallets.count) wallet\(store.wallets.count != 1 ? "s" : "")"
                 ).tag(1)
-                
+
                 balanceCard(
                     title: "Credit Available",
                     amount: totalCCLimitRemaining,
-                    gradient: [
-                        Color(red: 0.5, green: 0.2, blue: 0.95),
-                        Color(red: 0.6, green: 0.25, blue: 1.0),
-                        Color(red: 0.25, green: 0.1, blue: 0.45)
-                    ],
+                    cardColor: Color.warmOrange,
+                    orbColors: [Color.warmCard.opacity(0.25), Color(red: 0.18, green: 0.14, blue: 0.12)],
                     icon: "creditcard.fill",
-                    accentColor: utilizationColor,
+                    accentColor: Color.warmCard,
                     badge: "\(creditCardCount) card\(creditCardCount != 1 ? "s" : "")",
                     progress: (used: totalCCUsed, total: totalCCTotalLimit)
                 ).tag(2)
@@ -494,11 +525,11 @@ struct DashboardView: View {
             .frame(height: 200)
             
             // Custom Page Indicator
-            HStack(spacing: 8) {
+            HStack(spacing: 5) {
                 ForEach(0..<3, id: \.self) { index in
-                    Capsule()
-                        .fill(currentCardIndex == index ? Color.white : Color.white.opacity(0.3))
-                        .frame(width: currentCardIndex == index ? 24 : 8, height: 8)
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(currentCardIndex == index ? Color.warmOrange : Color.warmCard.opacity(0.25))
+                        .frame(width: currentCardIndex == index ? 22 : 6, height: 6)
                         .animation(.spring(response: 0.3, dampingFraction: 0.7), value: currentCardIndex)
                 }
             }
@@ -508,204 +539,127 @@ struct DashboardView: View {
     private func balanceCard(
         title: String,
         amount: Double,
-        gradient: [Color],
+        cardColor: Color,
+        orbColors: [Color],
         icon: String,
         accentColor: Color,
         badge: String,
         progress: (used: Double, total: Double)? = nil
     ) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // Header with Icon and Badge
-            HStack {
-                HStack(spacing: 8) {
-                    ZStack {
-                        Circle()
-                            .fill(accentColor.opacity(0.2))
-                            .frame(width: 36, height: 36)
-                        
-                        Image(systemName: icon)
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(accentColor)
-                    }
-                    
-                    Text(title)
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(.white.opacity(0.8))
-                }
-                
-                Spacer()
-                
-                Text(badge)
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(accentColor)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(accentColor.opacity(0.15), in: Capsule())
-            }
-            .padding(.bottom, 16)
-            
-            // Amount
-            HStack(alignment: .firstTextBaseline, spacing: 4) {
-                Text(baseCurrency.symbol)
-                    .font(.title3.weight(.medium))
-                    .foregroundStyle(.white.opacity(0.7))
-                
-                if showBalances {
-                    Text(formatNumber(amount))
-                        .font(.system(size: 38, weight: .bold, design: .rounded))
-                        .foregroundStyle(.white)
-                        .minimumScaleFactor(0.6)
-                        .lineLimit(1)
-                } else {
-                    Text("••••••••")
-                        .font(.system(size: 38, weight: .bold, design: .rounded))
-                        .foregroundStyle(.white.opacity(0.5))
-                }
-            }
-            .padding(.bottom, progress != nil ? 12 : 0)
-            
-            // Progress Section (for Credit Card)
-            if let progress {
-                let ratio = progress.total > 0 ? min(max(progress.used / progress.total, 0), 1) : 0
-                let percentUsed = progress.total > 0 ? (progress.used / progress.total) * 100 : 0
-                
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        Text("Utilization")
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(.white.opacity(0.6))
-                        
-                        Spacer()
-                        
-                        Text(String(format: "%.1f%%", percentUsed))
-                            .font(.caption.weight(.bold))
-                            .foregroundStyle(accentColor)
-                    }
-                    
-                    // Enhanced Progress Bar
-                    GeometryReader { geo in
-                        ZStack(alignment: .leading) {
-                            // Background
-                            RoundedRectangle(cornerRadius: 10)
-                                .fill(Color.white.opacity(0.1))
-                                .frame(height: 10)
-                            
-                            // Filled Progress
-                            RoundedRectangle(cornerRadius: 10)
-                                .fill(
-                                    LinearGradient(
-                                        colors: [accentColor, accentColor.opacity(0.7)],
-                                        startPoint: .leading,
-                                        endPoint: .trailing
-                                    )
-                                )
-                                .frame(width: geo.size.width * ratio, height: 10)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 10)
-                                        .fill(
-                                            LinearGradient(
-                                                colors: [.white.opacity(0.3), .clear],
-                                                startPoint: .top,
-                                                endPoint: .bottom
-                                            )
-                                        )
-                                )
-                        }
-                    }
-                    .frame(height: 10)
-                    
-                    // Stats Row
-                    HStack(spacing: 0) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Used")
-                                .font(.system(size: 9, weight: .medium))
-                                .foregroundStyle(.white.opacity(0.5))
-                            Text(formatNumber(progress.used))
-                                .font(.caption2.weight(.semibold))
-                                .foregroundStyle(.white.opacity(0.7))
-                        }
-                        
-                        Spacer()
-                        
-                        VStack(alignment: .trailing, spacing: 2) {
-                            Text("Available")
-                                .font(.system(size: 9, weight: .medium))
-                                .foregroundStyle(.white.opacity(0.5))
-                            Text(formatNumber(progress.total - progress.used))
-                                .font(.caption2.weight(.semibold))
+        let isDark = cardColor == Color.warmCard ? false : true
+        let textPrimary: Color = isDark ? Color.warmCard : Color(red: 0.11, green: 0.09, blue: 0.08)
+        let textSecondary: Color = isDark ? Color.warmCard.opacity(0.55) : Color(red: 0.11, green: 0.09, blue: 0.08).opacity(0.5)
+
+        return ZStack(alignment: .bottomTrailing) {
+            // Geometric orb decorations (like the Dribbble reference)
+            Circle()
+                .fill(orbColors[0])
+                .frame(width: 130, height: 130)
+                .offset(x: 55, y: 55)
+
+            Circle()
+                .fill(orbColors.count > 1 ? orbColors[1] : orbColors[0].opacity(0.5))
+                .frame(width: 90, height: 90)
+                .offset(x: 10, y: 35)
+
+            // Card content
+            VStack(alignment: .leading, spacing: 0) {
+                // Title row
+                HStack {
+                    HStack(spacing: 8) {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(accentColor.opacity(isDark ? 0.2 : 0.12))
+                                .frame(width: 32, height: 32)
+                            Image(systemName: icon)
+                                .font(.system(size: 13, weight: .bold))
                                 .foregroundStyle(accentColor)
                         }
+                        Text(title)
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(textSecondary)
+                    }
+                    Spacer()
+                    Text(badge)
+                        .font(.system(size: 10, weight: .black))
+                        .foregroundStyle(isDark ? Color.warmCard : Color.warmOrange)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(
+                            Capsule().fill(isDark ? Color.warmCard.opacity(0.15) : Color.warmOrange.opacity(0.12))
+                        )
+                }
+                .padding(.bottom, 14)
+
+                // Amount
+                HStack(alignment: .firstTextBaseline, spacing: 3) {
+                    Text(baseCurrency.symbol)
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundStyle(textSecondary)
+                    if showBalances {
+                        Text(formatNumber(amount))
+                            .font(.system(size: 36, weight: .black))
+                            .foregroundStyle(textPrimary)
+                            .minimumScaleFactor(0.55)
+                            .lineLimit(1)
+                    } else {
+                        Text("••••••")
+                            .font(.system(size: 36, weight: .black))
+                            .foregroundStyle(textSecondary)
+                    }
+                }
+                .padding(.bottom, progress != nil ? 10 : 0)
+
+                // Progress (Credit card)
+                if let progress {
+                    let ratio = progress.total > 0 ? min(max(progress.used / progress.total, 0), 1) : 0
+                    let pct   = progress.total > 0 ? (progress.used / progress.total) * 100 : 0
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Text("Used")
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundStyle(textSecondary)
+                            Spacer()
+                            Text(String(format: "%.0f%%", pct))
+                                .font(.system(size: 10, weight: .black))
+                                .foregroundStyle(accentColor)
+                        }
+                        GeometryReader { geo in
+                            ZStack(alignment: .leading) {
+                                RoundedRectangle(cornerRadius: 4)
+                                    .fill(textPrimary.opacity(0.12))
+                                    .frame(height: 7)
+                                RoundedRectangle(cornerRadius: 4)
+                                    .fill(accentColor)
+                                    .frame(width: geo.size.width * ratio, height: 7)
+                            }
+                        }
+                        .frame(height: 7)
+                    }
+                }
+
+                Spacer(minLength: 0)
+
+                // Footer
+                HStack {
+                    Text(Date().formatted(date: .abbreviated, time: .omitted))
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(textSecondary)
+                        .monospacedDigit()
+                    Spacer()
+                    HStack(spacing: -6) {
+                        Circle().fill(Color.warmOrange).frame(width: 20, height: 20)
+                        Circle().fill(textPrimary.opacity(0.25)).frame(width: 20, height: 20)
                     }
                 }
             }
-            
-            Spacer(minLength: 0)
-            
-            // Footer
-            HStack {
-                HStack(spacing: 6) {
-                    Circle()
-                        .fill(.white.opacity(0.2))
-                        .frame(width: 6, height: 6)
-                    
-                    Text(Date().formatted(date: .abbreviated, time: .omitted))
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.5))
-                        .monospacedDigit()
-                }
-                
-                Spacer()
-                
-                // Card Network Icons (visa/mastercard style)
-                HStack(spacing: -8) {
-                    Circle()
-                        .fill(Color.red.opacity(0.7))
-                        .frame(width: 24, height: 24)
-                    Circle()
-                        .fill(Color.orange.opacity(0.7))
-                        .frame(width: 24, height: 24)
-                }
-            }
+            .padding(22)
+            .frame(height: 200)
         }
-        .padding(24)
         .frame(height: 200)
-        .background(
-            ZStack {
-                // Main gradient background
-                LinearGradient(
-                    colors: gradient,
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-                
-                // Subtle pattern overlay
-                GeometryReader { geo in
-                    Circle()
-                        .fill(.white.opacity(0.03))
-                        .frame(width: 200, height: 200)
-                        .offset(x: geo.size.width * 0.7, y: -50)
-                    
-                    Circle()
-                        .fill(.white.opacity(0.02))
-                        .frame(width: 150, height: 150)
-                        .offset(x: -30, y: geo.size.height * 0.6)
-                }
-            }
-        )
-        .clipShape(RoundedRectangle(cornerRadius: 28))
-        .overlay(
-            RoundedRectangle(cornerRadius: 28)
-                .stroke(
-                    LinearGradient(
-                        colors: [.white.opacity(0.15), .white.opacity(0.05)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    lineWidth: 1.5
-                )
-        )
-        .shadow(color: Color.black.opacity(0.3), radius: 20, x: 0, y: 10)
-        .shadow(color: accentColor.opacity(0.2), radius: 15, x: 0, y: 8)
+        .background(cardColor)
+        .clipShape(RoundedRectangle(cornerRadius: 22))
+        .shadow(color: .black.opacity(0.25), radius: 16, x: 0, y: 6)
         .padding(.horizontal, 20)
     }
     
@@ -777,18 +731,17 @@ struct DashboardView: View {
                     // Section Header with Icon
                     HStack(spacing: 10) {
                         ZStack {
-                            Circle()
-                                .fill(vm.healthScoreColor.opacity(0.15))
+                            RoundedRectangle(cornerRadius: 10)
+                                .fill(Color.warmOrange.opacity(0.18))
                                 .frame(width: 36, height: 36)
-                            
                             Image(systemName: "chart.line.uptrend.xyaxis")
-                                .font(.system(size: 16, weight: .semibold))
-                                .foregroundStyle(vm.healthScoreColor)
+                                .font(.system(size: 15, weight: .bold))
+                                .foregroundStyle(Color.warmOrange)
                         }
-                        
+
                         Text("Financial Health")
-                            .font(.title3.bold())
-                            .foregroundStyle(.white)
+                            .font(.system(size: 18, weight: .black))
+                            .foregroundStyle(Color.warmCard)
                         
                         Spacer()
                         
@@ -814,9 +767,11 @@ struct DashboardView: View {
                             HStack(spacing: 10) {
                                 ZStack {
                                     Circle()
-                                        .fill(vm.healthScoreColor.opacity(0.2))
+                                        .fill(vm.healthScoreColor.opacity(0.15))
                                         .frame(width: 50, height: 50)
-                                    
+                                        .overlay(Circle().stroke(vm.healthScoreColor.opacity(0.3), lineWidth: 1))
+                                        .shadow(color: vm.healthScoreColor.opacity(0.35), radius: 12, x: 0, y: 0)
+
                                     Image(systemName: "heart.circle.fill")
                                         .font(.title2)
                                         .foregroundStyle(vm.healthScoreColor)
@@ -824,12 +779,12 @@ struct DashboardView: View {
                                 
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text("Financial Health Score")
-                                        .font(.headline)
-                                        .foregroundStyle(.white)
-                                    
+                                        .font(.system(size: 14, weight: .black))
+                                        .foregroundStyle(Color.warmCard)
+
                                     Text("Based on 4 key metrics")
                                         .font(.caption2)
-                                        .foregroundStyle(.white.opacity(0.6))
+                                        .foregroundStyle(Color.warmCard.opacity(0.5))
                                 }
                             }
                             
@@ -857,7 +812,7 @@ struct DashboardView: View {
                             GeometryReader { geo in
                                 ZStack(alignment: .leading) {
                                     RoundedRectangle(cornerRadius: 10)
-                                        .fill(Color(white: 0.12))
+                                        .fill(Color.warmCard.opacity(0.1))
                                         .frame(height: 16)
                                     
                                     RoundedRectangle(cornerRadius: 10)
@@ -887,10 +842,10 @@ struct DashboardView: View {
                             HStack {
                                 ForEach([("0", 0), ("25", 25), ("50", 50), ("75", 75), ("100", 100)], id: \.1) { marker in
                                     if marker.1 == 0 {
-                                        Text(marker.0).font(.system(size: 9, weight: .medium)).foregroundStyle(.white.opacity(0.4))
+                                        Text(marker.0).font(.system(size: 9, weight: .medium)).foregroundStyle(Color.warmCard.opacity(0.35))
                                     } else {
                                         Spacer()
-                                        Text(marker.0).font(.system(size: 9, weight: .medium)).foregroundStyle(.white.opacity(0.4))
+                                        Text(marker.0).font(.system(size: 9, weight: .medium)).foregroundStyle(Color.warmCard.opacity(0.35))
                                     }
                                 }
                             }
@@ -898,16 +853,9 @@ struct DashboardView: View {
                         .padding(.horizontal, 20)
                         .padding(.bottom, 20)
                     }
-                    .background(
-                        ZStack {
-                            LinearGradient(colors: [vm.healthScoreColor.opacity(0.08), Color(white: 0.08)], startPoint: .topLeading, endPoint: .bottomTrailing)
-                            GeometryReader { geo in
-                                Circle().fill(vm.healthScoreColor.opacity(0.05)).frame(width: 120, height: 120).offset(x: geo.size.width - 60, y: -30)
-                            }
-                        }
-                    )
-                    .clipShape(RoundedRectangle(cornerRadius: 20))
-                    .overlay(RoundedRectangle(cornerRadius: 20).stroke(LinearGradient(colors: [vm.healthScoreColor.opacity(0.3), vm.healthScoreColor.opacity(0.1)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1.5))
+                    .background(Color.warmDark)
+                    .clipShape(RoundedRectangle(cornerRadius: 18))
+                    .shadow(color: .black.opacity(0.3), radius: 8, x: 0, y: 3)
                     .padding(.horizontal, 16)
                     
                     // Key Metrics Row - Enhanced
@@ -956,113 +904,72 @@ struct DashboardView: View {
                     }
     private func enhancedMetricCard(title: String, value: String, icon: String, color: Color, subtitle: String, gradient: [Color]) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Icon
             ZStack {
-                Circle()
-                    .fill(color.opacity(0.2))
+                RoundedRectangle(cornerRadius: 11)
+                    .fill(Color.warmOrange.opacity(0.18))
                     .frame(width: 44, height: 44)
-                
                 Image(systemName: icon)
-                    .font(.system(size: 20, weight: .semibold))
-                    .foregroundStyle(color)
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundStyle(Color.warmOrange)
             }
-            .padding(.bottom, 12)
+            .padding(.bottom, 10)
             
             // Title
             Text(title)
-                .font(.caption.weight(.medium))
-                .foregroundStyle(.white.opacity(0.6))
-                .padding(.bottom, 8)
-            
-            // Value
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(Color.warmCard.opacity(0.5))
+                .padding(.bottom, 6)
+
             Text(value)
-                .font(.system(size: 24, weight: .bold, design: .rounded))
-                .foregroundStyle(.white)
+                .font(.system(size: 22, weight: .black))
+                .foregroundStyle(Color.warmCard)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
                 .padding(.bottom, 6)
-            
-            // Subtitle badge
+
             Text(subtitle)
-                .font(.caption2.bold())
-                .foregroundStyle(color)
+                .font(.system(size: 10, weight: .black))
+                .foregroundStyle(Color.warmOrange)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
-                .background(color.opacity(0.15), in: Capsule())
-            
+                .background(Color.warmOrange.opacity(0.15), in: Capsule())
+
             Spacer(minLength: 0)
-            
-            // Accent bar
-            HStack {
-                Rectangle()
-                    .fill(
-                        LinearGradient(
-                            colors: [color, color.opacity(0)],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        )
-                    )
-                    .frame(height: 3)
-                    .frame(maxWidth: 50)
-                
-                Spacer()
-            }
+
+            Rectangle()
+                .fill(Color.warmOrange)
+                .frame(height: 3)
+                .frame(maxWidth: 36)
+                .clipShape(Capsule())
         }
         .padding(16)
         .frame(maxWidth: .infinity)
         .frame(height: 180)
-        .background(
-            ZStack {
-                LinearGradient(
-                    colors: gradient + [Color(white: 0.08)],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-                
-                GeometryReader { geo in
-                    Circle()
-                        .fill(color.opacity(0.08))
-                        .frame(width: 80, height: 80)
-                        .offset(x: geo.size.width - 40, y: geo.size.height - 40)
-                }
-            }
-        )
+        .background(Color.warmDark)
         .clipShape(RoundedRectangle(cornerRadius: 18))
-        .overlay(
-            RoundedRectangle(cornerRadius: 18)
-                .stroke(
-                    LinearGradient(
-                        colors: [color.opacity(0.4), color.opacity(0.1)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    lineWidth: 1.5
-                )
-        )
-        .shadow(color: Color.black.opacity(0.2), radius: 10, x: 0, y: 4)
-        .shadow(color: color.opacity(0.15), radius: 8, x: 0, y: 4)
+        .shadow(color: .black.opacity(0.3), radius: 8, x: 0, y: 3)
     }
-    
+
     private var creditCardOverview: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Image(systemName: "creditcard.fill")
                     .font(.title2)
-                    .foregroundStyle(utilizationColor)
-                
+                    .foregroundStyle(Color.warmOrange)
+
                 Text("Credit Card Overview")
-                    .font(.headline)
-                    .foregroundStyle(.white)
-                
+                    .font(.system(size: 15, weight: .black))
+                    .foregroundStyle(Color.warmCard)
+
                 Spacer()
-                
+
                 VStack(alignment: .trailing, spacing: 2) {
                     Text("\(creditCardCount)")
                         .font(.title2.bold())
-                        .foregroundStyle(utilizationColor)
+                        .foregroundStyle(Color.warmOrange)
                     Text("card\(creditCardCount != 1 ? "s" : "")")
                         .font(.caption2)
-                        .foregroundStyle(utilizationColor.opacity(0.8))
+                        .foregroundStyle(Color.warmCard.opacity(0.5))
                 }
             }
             
@@ -1071,7 +978,7 @@ struct DashboardView: View {
                 HStack {
                     Text("Credit Utilization")
                         .font(.subheadline)
-                        .foregroundStyle(.white.opacity(0.7))
+                        .foregroundStyle(Color.warmCard.opacity(0.6))
                     
                     Spacer()
                     
@@ -1090,7 +997,7 @@ struct DashboardView: View {
                 GeometryReader { geo in
                     ZStack(alignment: .leading) {
                         RoundedRectangle(cornerRadius: 6)
-                            .fill(Color(white: 0.15))
+                            .fill(Color.warmCard.opacity(0.12))
                             .frame(height: 12)
                         
                         RoundedRectangle(cornerRadius: 6)
@@ -1112,15 +1019,15 @@ struct DashboardView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Used")
                         .font(.caption2)
-                        .foregroundStyle(.white.opacity(0.6))
-                    
+                        .foregroundStyle(Color.warmCard.opacity(0.5))
+
                     HStack(spacing: 2) {
                         Text(baseCurrency.symbol)
                             .font(.caption)
-                            .foregroundStyle(.neonRed.opacity(0.8))
+                            .foregroundStyle(Color.neonRed.opacity(0.8))
                         Text(formatNumber(totalCreditUsed))
                             .font(.subheadline.bold())
-                            .foregroundStyle(.neonRed)
+                            .foregroundStyle(Color.neonRed)
                     }
                 }
                 
@@ -1131,15 +1038,15 @@ struct DashboardView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Available")
                         .font(.caption2)
-                        .foregroundStyle(.white.opacity(0.6))
-                    
+                        .foregroundStyle(Color.warmCard.opacity(0.5))
+
                     HStack(spacing: 2) {
                         Text(baseCurrency.symbol)
                             .font(.caption)
-                            .foregroundStyle(.neonGreen.opacity(0.8))
+                            .foregroundStyle(Color.neonGreen.opacity(0.8))
                         Text(formatNumber(totalCreditAvailable))
                             .font(.subheadline.bold())
-                            .foregroundStyle(.neonGreen)
+                            .foregroundStyle(Color.neonGreen)
                     }
                 }
                 
@@ -1150,15 +1057,15 @@ struct DashboardView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Total Limit")
                         .font(.caption2)
-                        .foregroundStyle(.white.opacity(0.6))
-                    
+                        .foregroundStyle(Color.warmCard.opacity(0.5))
+
                     HStack(spacing: 2) {
                         Text(baseCurrency.symbol)
                             .font(.caption)
-                            .foregroundStyle(.white.opacity(0.7))
+                            .foregroundStyle(Color.warmCard.opacity(0.6))
                         Text(formatNumber(totalCreditLimit))
                             .font(.subheadline.bold())
-                            .foregroundStyle(.white)
+                            .foregroundStyle(Color.warmCard)
                     }
                 }
             }
@@ -1176,58 +1083,55 @@ struct DashboardView: View {
                         
                         Text("This Month's Due")
                             .font(.subheadline)
-                            .foregroundStyle(.white.opacity(0.7))
+                            .foregroundStyle(Color.warmCard.opacity(0.6))
                     }
-                    
+
                     HStack(spacing: 4) {
                         Text(baseCurrency.symbol)
                             .font(.headline)
-                            .foregroundStyle(.orange)
+                            .foregroundStyle(Color.warmOrange)
                         Text(formatNumber(totalMonthlyDue))
                             .font(.title3.bold())
-                            .foregroundStyle(.white)
+                            .foregroundStyle(Color.warmCard)
                     }
                 }
-                
+
                 Spacer()
-                
+
                 Image(systemName: "exclamationmark.triangle.fill")
                     .font(.title2)
-                    .foregroundStyle(.orange.opacity(0.6))
+                    .foregroundStyle(Color.warmOrange.opacity(0.8))
             }
         }
         .padding(16)
         .background(
             LinearGradient(
-                colors: [Color(white: 0.12), Color(white: 0.08)],
+                colors: [Color.warmDark, Color.warmDark],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
         )
-        .clipShape(RoundedRectangle(cornerRadius: 16))
-        .overlay(
-            RoundedRectangle(cornerRadius: 16)
-                .stroke(utilizationColor.opacity(0.3), lineWidth: 1)
-        )
+        .clipShape(RoundedRectangle(cornerRadius: 18))
+        .shadow(color: .black.opacity(0.3), radius: 8, x: 0, y: 3)
         .padding(.horizontal, 16)
     }
-    
+
     private var cardUtilizationBreakdown: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Image(systemName: "chart.bar.fill")
                     .font(.subheadline)
-                    .foregroundStyle(.white.opacity(0.7))
-                
+                    .foregroundStyle(Color.warmOrange)
+
                 Text("Card Utilization Breakdown")
-                    .font(.subheadline)
-                    .foregroundStyle(.white.opacity(0.7))
-                
+                    .font(.system(size: 13, weight: .black))
+                    .foregroundStyle(Color.warmCard)
+
                 Spacer()
-                
+
                 Text("Avg: \(String(format: "%.1f%%", averageUtilizationPerCard))")
                     .font(.caption2.bold())
-                    .foregroundStyle(.white.opacity(0.5))
+                    .foregroundStyle(Color.warmCard.opacity(0.45))
             }
             
             ForEach(store.creditCards.prefix(3)) { card in
@@ -1235,7 +1139,7 @@ struct DashboardView: View {
                     HStack {
                         Text(card.name)
                             .font(.caption)
-                            .foregroundStyle(.white.opacity(0.8))
+                            .foregroundStyle(Color.warmCard.opacity(0.8))
                         
                         Spacer()
                         
@@ -1247,7 +1151,7 @@ struct DashboardView: View {
                     GeometryReader { geo in
                         ZStack(alignment: .leading) {
                             RoundedRectangle(cornerRadius: 4)
-                                .fill(Color(white: 0.15))
+                                .fill(Color.warmCard.opacity(0.1))
                                 .frame(height: 8)
                             
                             RoundedRectangle(cornerRadius: 4)
@@ -1262,36 +1166,33 @@ struct DashboardView: View {
             if store.creditCards.count > 3 {
                 Text("+ \(store.creditCards.count - 3) more card\(store.creditCards.count - 3 != 1 ? "s" : "")")
                     .font(.caption2)
-                    .foregroundStyle(.white.opacity(0.5))
+                    .foregroundStyle(Color.warmCard.opacity(0.45))
                     .padding(.top, 4)
             }
         }
         .padding(16)
         .background(
             LinearGradient(
-                colors: [Color(white: 0.12), Color(white: 0.08)],
+                colors: [Color.warmDark, Color.warmDark],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
         )
-        .clipShape(RoundedRectangle(cornerRadius: 16))
-        .overlay(
-            RoundedRectangle(cornerRadius: 16)
-                .stroke(Color.white.opacity(0.1), lineWidth: 1)
-        )
+        .clipShape(RoundedRectangle(cornerRadius: 18))
+        .shadow(color: .black.opacity(0.3), radius: 8, x: 0, y: 3)
         .padding(.horizontal, 16)
     }
-    
+
     private var portfolioDistribution: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Image(systemName: "chart.bar.fill")
                     .font(.subheadline)
-                    .foregroundStyle(.white.opacity(0.7))
-                
+                    .foregroundStyle(Color.warmOrange)
+
                 Text("Portfolio Distribution")
-                    .font(.subheadline)
-                    .foregroundStyle(.white.opacity(0.7))
+                    .font(.system(size: 13, weight: .black))
+                    .foregroundStyle(Color.warmCard)
                 
                 Spacer()
             }
@@ -1358,19 +1259,16 @@ struct DashboardView: View {
         .padding(16)
         .background(
             LinearGradient(
-                colors: [Color(white: 0.12), Color(white: 0.08)],
+                colors: [Color.warmDark, Color.warmDark],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
         )
-        .clipShape(RoundedRectangle(cornerRadius: 16))
-        .overlay(
-            RoundedRectangle(cornerRadius: 16)
-                .stroke(Color.white.opacity(0.1), lineWidth: 1)
-        )
+        .clipShape(RoundedRectangle(cornerRadius: 18))
+        .shadow(color: .black.opacity(0.3), radius: 8, x: 0, y: 3)
         .padding(.horizontal, 16)
     }
-    
+
     private func metricCard(title: String, value: String, icon: String, color: Color, subtitle: String) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
@@ -1395,7 +1293,7 @@ struct DashboardView: View {
         .padding(12)
         .background(
             LinearGradient(
-                colors: [Color(white: 0.12), Color(white: 0.08)],
+                colors: [Color.warmDark, Color.warmDark],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
@@ -1431,18 +1329,17 @@ struct DashboardView: View {
             // Section Header
             HStack(spacing: 10) {
                 ZStack {
-                    Circle()
-                        .fill(Color(red: 0.3, green: 0.6, blue: 1.0).opacity(0.15))
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Color.warmOrange.opacity(0.18))
                         .frame(width: 36, height: 36)
-                    
                     Image(systemName: "square.grid.2x2")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(Color(red: 0.3, green: 0.6, blue: 1.0))
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(Color.warmOrange)
                 }
-                
+
                 Text("Quick Actions")
-                    .font(.title3.bold())
-                    .foregroundStyle(.white)
+                    .font(.system(size: 18, weight: .black))
+                    .foregroundStyle(Color.warmCard)
                 
                 Spacer()
             }
@@ -1496,18 +1393,17 @@ struct DashboardView: View {
             // Enhanced Header
             HStack(spacing: 10) {
                 ZStack {
-                    Circle()
-                        .fill(Color.neonGreen.opacity(0.15))
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Color.warmOrange.opacity(0.18))
                         .frame(width: 36, height: 36)
-                    
                     Image(systemName: "chart.bar.fill")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(.neonGreen)
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(Color.warmOrange)
                 }
-                
+
                 Text("Analytics")
-                    .font(.title3.bold())
-                    .foregroundStyle(.white)
+                    .font(.system(size: 18, weight: .black))
+                    .foregroundStyle(Color.warmCard)
                 
                 Spacer()
                 
@@ -1538,23 +1434,10 @@ struct DashboardView: View {
                     }
                     .padding(.horizontal, 12)
                     .padding(.vertical, 7)
-                    .background(
-                        LinearGradient(
-                            colors: [
-                                Color(red: 0.95, green: 0.4, blue: 0.2),
-                                Color(red: 0.85, green: 0.3, blue: 0.15)
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
+                    .background(Color.warmOrange)
                     .clipShape(Capsule())
-                    .overlay(
-                        Capsule()
-                            .stroke(Color.white.opacity(0.2), lineWidth: 1)
-                    )
-                    .shadow(color: Color(red: 0.95, green: 0.4, blue: 0.2).opacity(0.3), radius: 4, x: 0, y: 2)
-                    .foregroundStyle(.white)
+                    .shadow(color: Color.warmOrange.opacity(0.35), radius: 6, x: 0, y: 2)
+                    .foregroundStyle(Color.warmCard)
                 }
             }
             .padding(.horizontal, 20)
@@ -1566,7 +1449,7 @@ struct DashboardView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Total Inflow")
                         .font(.caption2)
-                        .foregroundStyle(.white.opacity(0.6))
+                        .foregroundStyle(Color.warmCard.opacity(0.5))
                     
                     let totalInflow = convertedChartData.reduce(0) { $0 + $1.inflow }
                     Text(formatNumber(totalInflow))
@@ -1576,25 +1459,25 @@ struct DashboardView: View {
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
                 .background(
-                    RoundedRectangle(cornerRadius: 10)
+                    RoundedRectangle(cornerRadius: 8)
                         .fill(Color.neonGreen.opacity(0.1))
                 )
                 
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Total Outflow")
                         .font(.caption2)
-                        .foregroundStyle(.white.opacity(0.6))
+                        .foregroundStyle(Color.warmCard.opacity(0.5))
                     
                     let totalOutflow = convertedChartData.reduce(0) { $0 + $1.outflow }
                     Text(formatNumber(totalOutflow))
                         .font(.subheadline.bold())
-                        .foregroundStyle(Color(red: 0.45, green: 0.2, blue: 0.9))
+                        .foregroundStyle(Color.warmOrange)
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
                 .background(
-                    RoundedRectangle(cornerRadius: 10)
-                        .fill(Color(red: 0.45, green: 0.2, blue: 0.9).opacity(0.1))
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color.warmOrange.opacity(0.1))
                 )
                 
                 Spacer()
@@ -1625,10 +1508,7 @@ struct DashboardView: View {
                     )
                     .foregroundStyle(
                         LinearGradient(
-                            colors: [
-                                Color(red: 0.45, green: 0.2, blue: 0.9),
-                                Color(red: 0.35, green: 0.15, blue: 0.7)
-                            ],
+                            colors: [Color.warmOrange, Color.warmOrange.opacity(0.6)],
                             startPoint: .top,
                             endPoint: .bottom
                         )
@@ -1640,7 +1520,7 @@ struct DashboardView: View {
             .chartXAxis {
                 AxisMarks { _ in
                     AxisValueLabel()
-                        .foregroundStyle(Color.white.opacity(0.5))
+                        .foregroundStyle(Color.warmCard.opacity(0.45))
                         .font(.caption2.weight(.medium))
                 }
             }
@@ -1664,27 +1544,18 @@ struct DashboardView: View {
                         .frame(width: 12, height: 12)
                     
                     Text("Inflow")
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(.white.opacity(0.8))
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Color.warmCard.opacity(0.7))
                 }
                 
                 HStack(spacing: 6) {
                     RoundedRectangle(cornerRadius: 3)
-                        .fill(
-                            LinearGradient(
-                                colors: [
-                                    Color(red: 0.45, green: 0.2, blue: 0.9),
-                                    Color(red: 0.35, green: 0.15, blue: 0.7)
-                                ],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
+                        .fill(Color.warmOrange)
                         .frame(width: 12, height: 12)
-                    
+
                     Text("Outflow")
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(.white.opacity(0.8))
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Color.warmCard.opacity(0.7))
                 }
                 
                 Spacer()
@@ -1713,41 +1584,9 @@ struct DashboardView: View {
             .padding(.horizontal, 20)
             .padding(.bottom, 20)
         }
-        .background(
-            ZStack {
-                LinearGradient(
-                    colors: [Color(white: 0.10), Color(white: 0.08)],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-                
-                // Decorative elements
-                GeometryReader { geo in
-                    Circle()
-                        .fill(Color.neonGreen.opacity(0.03))
-                        .frame(width: 150, height: 150)
-                        .offset(x: -40, y: geo.size.height - 80)
-                    
-                    Circle()
-                        .fill(Color(red: 0.45, green: 0.2, blue: 0.9).opacity(0.03))
-                        .frame(width: 120, height: 120)
-                        .offset(x: geo.size.width - 50, y: -20)
-                }
-            }
-        )
-        .clipShape(RoundedRectangle(cornerRadius: 24))
-        .overlay(
-            RoundedRectangle(cornerRadius: 24)
-                .stroke(
-                    LinearGradient(
-                        colors: [.white.opacity(0.1), .white.opacity(0.05)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    lineWidth: 1.5
-                )
-        )
-        .shadow(color: Color.black.opacity(0.2), radius: 15, x: 0, y: 5)
+        .background(Color.warmDark)
+        .clipShape(RoundedRectangle(cornerRadius: 18))
+        .shadow(color: .black.opacity(0.3), radius: 8, x: 0, y: 3)
         .padding(.horizontal, 16)
     }
 
@@ -1756,9 +1595,15 @@ struct DashboardView: View {
     private var recentTransactionsSection: some View {
         VStack(spacing: 16) {
             HStack {
-                Text("Transactions")
-                    .font(.title3.bold())
-                    .foregroundStyle(.white)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Transactions")
+                        .font(.system(size: 20, weight: .black))
+                        .foregroundStyle(Color.warmCard)
+                    Rectangle()
+                        .fill(Color.warmOrange)
+                        .frame(width: 28, height: 3)
+                        .clipShape(Capsule())
+                }
                 Spacer()
             }
             .padding(.horizontal, 16)
@@ -1773,7 +1618,7 @@ struct DashboardView: View {
             if recentTxs.isEmpty {
                 Text("No recent transactions")
                     .font(.subheadline)
-                    .foregroundStyle(Color(white: 0.5))
+                    .foregroundStyle(Color.warmCard.opacity(0.4))
                     .padding()
             } else {
                 VStack(spacing: 0) {
@@ -1792,14 +1637,15 @@ struct DashboardView: View {
                         
                         if index < recentTxs.count - 1 {
                             Divider()
-                                .background(Color.white.opacity(0.1))
-                                .padding(.leading, 64)
+                                .background(Color.warmCard.opacity(0.08))
+                                .padding(.leading, 74)
                                 .padding(.trailing, 16)
                         }
                     }
                 }
-                .background(Color(white: 0.08))
-                .cornerRadius(20)
+                .background(Color.warmDark)
+                .clipShape(RoundedRectangle(cornerRadius: 18))
+                .shadow(color: .black.opacity(0.3), radius: 8, x: 0, y: 3)
                 .padding(.horizontal, 16)
             }
         }
@@ -1815,93 +1661,59 @@ struct EnhancedFeatureTile: View {
     let color: Color
     let gradient: [Color]
     let count: Int?
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Icon and Badge
             HStack(alignment: .top) {
                 ZStack {
-                    Circle()
-                        .fill(color.opacity(0.2))
-                        .frame(width: 48, height: 48)
-                    
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(Color.warmOrange)
+                        .frame(width: 44, height: 44)
                     Image(systemName: icon)
-                        .font(.system(size: 22, weight: .semibold))
-                        .foregroundStyle(color)
+                        .font(.system(size: 20, weight: .bold))
+                        .foregroundStyle(Color.warmCard)
                 }
-                
                 Spacer()
-                
                 if let count = count {
                     Text("\(count)")
-                        .font(.caption.bold())
-                        .foregroundStyle(color)
+                        .font(.system(size: 11, weight: .black))
+                        .foregroundStyle(Color.warmOrange)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
-                        .background(color.opacity(0.15), in: Capsule())
+                        .background(Color.warmOrange.opacity(0.15), in: Capsule())
                 }
             }
-            .padding(.bottom, 16)
-            
-            // Title
+            .padding(.bottom, 14)
+
             Text(title)
-                .font(.headline.weight(.semibold))
-                .foregroundStyle(.white)
-                .padding(.bottom, 4)
-            
-            // Subtitle
+                .font(.system(size: 15, weight: .black))
+                .foregroundStyle(Color.warmCard)
+                .padding(.bottom, 3)
+
             Text(subtitle)
-                .font(.caption)
-                .foregroundStyle(.white.opacity(0.6))
-            
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(Color.warmCard.opacity(0.45))
+
             Spacer(minLength: 0)
-            
-            // Arrow indicator
+
             HStack {
                 Spacer()
-                Image(systemName: "arrow.right")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(color.opacity(0.7))
+                ZStack {
+                    Circle()
+                        .fill(Color.warmOrange)
+                        .frame(width: 28, height: 28)
+                    Image(systemName: "arrow.right")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(Color.warmCard)
+                }
             }
         }
         .padding(16)
         .frame(maxWidth: .infinity)
         .frame(height: 140)
-        .background(
-            ZStack {
-                LinearGradient(
-                    colors: gradient + [Color(white: 0.08)],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-                
-                GeometryReader { geo in
-                    Circle()
-                        .fill(color.opacity(0.08))
-                        .frame(width: 80, height: 80)
-                        .offset(x: geo.size.width - 40, y: geo.size.height - 40)
-                    
-                    Circle()
-                        .fill(.white.opacity(0.02))
-                        .frame(width: 60, height: 60)
-                        .offset(x: -20, y: 20)
-                }
-            }
-        )
-        .clipShape(RoundedRectangle(cornerRadius: 20))
-        .overlay(
-            RoundedRectangle(cornerRadius: 20)
-                .stroke(
-                    LinearGradient(
-                        colors: [color.opacity(0.3), color.opacity(0.1)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    lineWidth: 1.5
-                )
-        )
-        .shadow(color: Color.black.opacity(0.2), radius: 10, x: 0, y: 4)
-        .shadow(color: color.opacity(0.15), radius: 8, x: 0, y: 4)
+        .background(Color.warmDark)
+        .clipShape(RoundedRectangle(cornerRadius: 18))
+        .shadow(color: .black.opacity(0.3), radius: 8, x: 0, y: 3)
     }
 }
 
@@ -1939,41 +1751,39 @@ struct AnyTransactionRow: View {
     let showBalances: Bool
     
     var body: some View {
-        HStack(spacing: 16) {
+        HStack(spacing: 14) {
             ZStack {
                 RoundedRectangle(cornerRadius: 12)
-                    .fill(Color.white.opacity(0.06))
-                    .frame(width: 48, height: 48)
+                    .fill(isIncome ? Color.neonGreen.opacity(0.15) : Color.warmOrange.opacity(0.15))
+                    .frame(width: 44, height: 44)
                 Image(systemName: iconName)
-                    .font(.title3)
-                    .foregroundStyle(iconColor)
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(isIncome ? Color.neonGreen : Color.warmOrange)
             }
-            
-            VStack(alignment: .leading, spacing: 4) {
+
+            VStack(alignment: .leading, spacing: 3) {
                 Text(categoryName)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.white)
-                
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(Color.warmCard)
                 Text(accountName)
-                    .font(.caption2)
-                    .foregroundStyle(Color(white: 0.5))
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Color.warmCard.opacity(0.45))
             }
-            
+
             Spacer()
-            
-            VStack(alignment: .trailing, spacing: 4) {
+
+            VStack(alignment: .trailing, spacing: 3) {
                 Text(showBalances ? amountString : "••••••")
-                    .font(.subheadline.weight(.bold))
-                    .foregroundStyle(amountColor)
-                
+                    .font(.system(size: 14, weight: .black))
+                    .foregroundStyle(isIncome ? Color.neonGreen : Color.warmCard)
                 Text(item.date, format: .dateTime.day().month().year())
-                    .font(.caption2)
-                    .foregroundStyle(Color(white: 0.5))
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(Color.warmCard.opacity(0.4))
             }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
-        .contentShape(Rectangle()) // Makes entire row area tappable
+        .contentShape(Rectangle())
     }
     
     private var isIncome: Bool {
@@ -2034,105 +1844,55 @@ struct EnhancedMetricTile: View {
     let color: Color
     let gradient: [Color]
     let badge: String
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Header with Icon and Badge
             HStack(alignment: .top) {
                 ZStack {
-                    Circle()
-                        .fill(color.opacity(0.15))
-                        .frame(width: 40, height: 40)
-                    
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Color.warmOrange.opacity(0.18))
+                        .frame(width: 38, height: 38)
                     Image(systemName: icon)
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(color)
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundStyle(Color.warmOrange)
                 }
-                
                 Spacer()
-                
                 Text(badge)
-                    .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(color.opacity(0.9))
+                    .font(.system(size: 9, weight: .black))
+                    .foregroundStyle(Color.warmOrange)
                     .padding(.horizontal, 7)
                     .padding(.vertical, 3)
-                    .background(color.opacity(0.15), in: Capsule())
+                    .background(Color.warmOrange.opacity(0.15), in: Capsule())
             }
-            .padding(.bottom, 12)
-            
-            // Title
+            .padding(.bottom, 10)
+
             Text(title)
-                .font(.caption2.weight(.medium))
-                .foregroundStyle(.white.opacity(0.6))
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(Color.warmCard.opacity(0.5))
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
-                .padding(.bottom, 6)
-            
-            // Value
+                .padding(.bottom, 5)
+
             Text(value)
-                .font(.system(size: 18, weight: .bold, design: .rounded))
-                .foregroundStyle(.white)
+                .font(.system(size: 17, weight: .black))
+                .foregroundStyle(Color.warmCard)
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
-            
+
             Spacer(minLength: 0)
-            
-            // Subtle accent line at bottom
-            HStack {
-                Rectangle()
-                    .fill(
-                        LinearGradient(
-                            colors: [color, color.opacity(0)],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        )
-                    )
-                    .frame(height: 3)
-                    .frame(maxWidth: 60)
-                
-                Spacer()
-            }
+
+            Rectangle()
+                .fill(Color.warmOrange)
+                .frame(height: 3)
+                .frame(maxWidth: 36)
+                .clipShape(Capsule())
         }
-        .padding(16)
+        .padding(14)
         .frame(maxWidth: .infinity)
         .frame(height: 140)
-        .background(
-            ZStack {
-                // Main gradient background
-                LinearGradient(
-                    colors: gradient + [Color(white: 0.08)],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-                
-                // Subtle pattern overlay
-                GeometryReader { geo in
-                    Circle()
-                        .fill(color.opacity(0.08))
-                        .frame(width: 80, height: 80)
-                        .offset(x: geo.size.width - 40, y: geo.size.height - 40)
-                    
-                    Circle()
-                        .fill(.white.opacity(0.02))
-                        .frame(width: 50, height: 50)
-                        .offset(x: -10, y: 10)
-                }
-            }
-        )
-        .clipShape(RoundedRectangle(cornerRadius: 20))
-        .overlay(
-            RoundedRectangle(cornerRadius: 20)
-                .stroke(
-                    LinearGradient(
-                        colors: [color.opacity(0.3), color.opacity(0.1)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    lineWidth: 1.5
-                )
-        )
-        .shadow(color: Color.black.opacity(0.2), radius: 10, x: 0, y: 4)
-        .shadow(color: color.opacity(0.15), radius: 8, x: 0, y: 4)
+        .background(Color.warmDark)
+        .clipShape(RoundedRectangle(cornerRadius: 18))
+        .shadow(color: .black.opacity(0.3), radius: 8, x: 0, y: 3)
     }
 }
 
@@ -2435,150 +2195,384 @@ struct UniversalAddTransactionView: View {
 struct FinancialHealthExplanationSheet: View {
     let vm: DashboardViewModel
     @Environment(\.dismiss) private var dismiss
-    
+
     var body: some View {
         NavigationStack {
             ZStack {
                 Color.appBg.ignoresSafeArea()
-                
-                ScrollView {
-                    VStack(spacing: 24) {
-                        // Score Header
-                        VStack(spacing: 12) {
-                            ZStack {
-                                Circle()
-                                    .stroke(vm.healthScoreColor.opacity(0.1), lineWidth: 10)
-                                    .frame(width: 100, height: 100)
-                                
-                                Circle()
-                                    .trim(from: 0, to: CGFloat(vm.financialHealthScore) / 100)
-                                    .stroke(vm.healthScoreColor, style: StrokeStyle(lineWidth: 10, lineCap: .round))
-                                    .frame(width: 100, height: 100)
-                                    .rotationEffect(.degrees(-90))
-                                
-                                Text("\(vm.financialHealthScore)")
-                                    .font(.system(size: 34, weight: .bold, design: .rounded))
-                                    .foregroundStyle(vm.healthScoreColor)
-                            }
-                            
-                            Text(vm.healthScoreText)
-                                .font(.title3.bold())
-                                .foregroundStyle(vm.healthScoreColor)
-                        }
-                        .padding(.top, 20)
-                        
-                        // Breakdown Section
-                        VStack(alignment: .leading, spacing: 16) {
-                            Text("Metric Breakdown")
-                                .font(.headline)
-                                .foregroundStyle(.white)
-                            
-                            VStack(spacing: 12) {
-                                explanationRow(title: "Net Worth", value: vm.currencyManager.format(amount: vm.totalNetWorth, currency: vm.baseCurrency), desc: "The total value of your assets minus your liabilities. Positive is good.")
-                                Divider().background(Color.white.opacity(0.1))
-                                explanationRow(title: "Debt Ratio", value: String(format: "%.1f%%", vm.debtToAssetRatio), desc: "Percentage of assets financed by debt. Below 30% is ideal.")
-                                Divider().background(Color.white.opacity(0.1))
-                                explanationRow(title: "Liquidity", value: String(format: "%.2fx", vm.liquidityRatio), desc: "Your ability to pay off short-term debts. Above 1.5x is strong.")
-                                Divider().background(Color.white.opacity(0.1))
-                                explanationRow(title: "Credit Usage", value: String(format: "%.1f%%", vm.creditUtilizationRatio), desc: "How much of your credit limit you're using. Keep it under 30%.")
-                            }
-                            .padding(16)
-                            .glassEffect(in: .rect(cornerRadius: 18))
-                        }
-                        
-                        // AI Recommendations
-                        aiRecommendationsSection(vm)
+
+                ScrollView(showsIndicators: false) {
+                    VStack(spacing: 20) {
+                        scoreHeroCard
+                        metricsSection
+                        aiSection
                     }
-                    .padding(20)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 8)
+                    .padding(.bottom, 40)
                 }
             }
-            .navigationTitle("Financial Health")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .principal) {
+                    HStack(spacing: 8) {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(Color.warmOrange.opacity(0.18))
+                                .frame(width: 28, height: 28)
+                            Image(systemName: "heart.text.square.fill")
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundStyle(Color.warmOrange)
+                        }
+                        Text("Financial Health")
+                            .font(.system(size: 16, weight: .black))
+                            .foregroundStyle(Color.warmCard)
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { dismiss() }
+                    Button {
+                        dismiss()
+                    } label: {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(Color.warmDark)
+                                .frame(width: 32, height: 32)
+                            Image(systemName: "xmark")
+                                .font(.system(size: 11, weight: .black))
+                                .foregroundStyle(Color.warmCard)
+                        }
+                    }
                 }
             }
         }
     }
-    
-    @ViewBuilder
-    private func aiRecommendationsSection(_ vm: DashboardViewModel) -> some View {
-        VStack(alignment: .leading, spacing: 16) {
+
+    // MARK: - Score Hero Card (cream card like the balance cards)
+    private var scoreHeroCard: some View {
+        ZStack(alignment: .bottomTrailing) {
+            // Geometric orb decoration
+            Circle()
+                .fill(Color.warmOrange)
+                .frame(width: 140, height: 140)
+                .offset(x: 55, y: 55)
+            Circle()
+                .fill(Color(red: 0.18, green: 0.14, blue: 0.12))
+                .frame(width: 95, height: 95)
+                .offset(x: 12, y: 38)
+
+            VStack(alignment: .leading, spacing: 0) {
+                // Top row
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Health Score")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(Color(red: 0.11, green: 0.09, blue: 0.08).opacity(0.5))
+                        Text("Your financial overview")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(Color(red: 0.11, green: 0.09, blue: 0.08).opacity(0.38))
+                    }
+                    Spacer()
+                    Text(vm.healthScoreText)
+                        .font(.system(size: 11, weight: .black))
+                        .foregroundStyle(Color.warmOrange)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(Color.warmOrange.opacity(0.12), in: Capsule())
+                }
+                .padding(.bottom, 12)
+
+                // Big score number
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    Text("\(vm.financialHealthScore)")
+                        .font(.system(size: 64, weight: .black))
+                        .foregroundStyle(Color(red: 0.11, green: 0.09, blue: 0.08))
+                    Text("/ 100")
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundStyle(Color(red: 0.11, green: 0.09, blue: 0.08).opacity(0.35))
+                        .padding(.bottom, 6)
+                }
+
+                // Score bar
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(Color(red: 0.11, green: 0.09, blue: 0.08).opacity(0.1))
+                            .frame(height: 7)
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(Color.warmOrange)
+                            .frame(width: geo.size.width * CGFloat(vm.financialHealthScore) / 100, height: 7)
+                    }
+                }
+                .frame(height: 7)
+                .padding(.bottom, 10)
+
+                // Contextual hint
+                Text(vm.financialHealthScore >= 80 ? "You're in great shape — keep optimizing!"
+                     : vm.financialHealthScore >= 60 ? "Solid foundation, a few things to tighten up."
+                     : vm.financialHealthScore >= 40 ? "Some areas need your attention."
+                     : "Action needed — let's fix this together.")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Color(red: 0.11, green: 0.09, blue: 0.08).opacity(0.55))
+            }
+            .padding(22)
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: 220)
+        .background(Color.warmCard)
+        .clipShape(RoundedRectangle(cornerRadius: 22))
+        .shadow(color: .black.opacity(0.25), radius: 16, x: 0, y: 6)
+    }
+
+    // MARK: - 4 Metric Tiles
+    private var metricsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionHeader(icon: "chart.pie.fill", title: "Metric Breakdown")
+
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                metricTile(
+                    icon: "dollarsign.circle.fill",
+                    title: "Net Worth",
+                    value: vm.currencyManager.format(amount: vm.totalNetWorth, currency: vm.baseCurrency),
+                    desc: "Assets minus liabilities",
+                    status: vm.totalNetWorth >= 0 ? "Positive" : "Negative",
+                    statusOk: vm.totalNetWorth >= 0
+                )
+                metricTile(
+                    icon: "chart.pie.fill",
+                    title: "Debt Ratio",
+                    value: String(format: "%.1f%%", vm.debtToAssetRatio),
+                    desc: "Debt vs assets. < 30% is ideal",
+                    status: vm.debtToAssetRatio < 30 ? "Healthy" : vm.debtToAssetRatio < 50 ? "Moderate" : "High",
+                    statusOk: vm.debtToAssetRatio < 30
+                )
+                metricTile(
+                    icon: "drop.fill",
+                    title: "Liquidity",
+                    value: String(format: "%.2fx", vm.liquidityRatio),
+                    desc: "Ability to cover short-term debt",
+                    status: vm.liquidityRatio > 2 ? "Strong" : vm.liquidityRatio > 1 ? "Adequate" : "Low",
+                    statusOk: vm.liquidityRatio > 1.5
+                )
+                metricTile(
+                    icon: "creditcard.fill",
+                    title: "Credit Usage",
+                    value: String(format: "%.1f%%", vm.creditUtilizationRatio),
+                    desc: "% of credit limit used. < 30%",
+                    status: vm.creditUtilizationRatio < 30 ? "Good" : vm.creditUtilizationRatio < 50 ? "Caution" : "High",
+                    statusOk: vm.creditUtilizationRatio < 30
+                )
+            }
+        }
+    }
+
+    // MARK: - AI Section
+    private var aiSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Label("AI Recommendations", systemImage: "sparkles")
-                    .font(.headline)
-                    .foregroundStyle(.purple)
+                sectionHeader(icon: "sparkles", title: "AI Advice")
                 Spacer()
                 if vm.isLoadingAI {
-                    ProgressView().tint(.purple)
+                    HStack(spacing: 6) {
+                        ProgressView()
+                            .tint(Color.warmOrange)
+                            .scaleEffect(0.8)
+                        Text("Thinking...")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(Color.warmCard.opacity(0.5))
+                    }
                 }
             }
-            
+
             if let recommendation = vm.aiRecommendation {
-                VStack(alignment: .trailing, spacing: 10) {
+                // Recommendation card
+                VStack(alignment: .leading, spacing: 0) {
+                    // Card header
+                    HStack(spacing: 10) {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 10)
+                                .fill(Color.warmOrange)
+                                .frame(width: 38, height: 38)
+                            Image(systemName: "sparkles")
+                                .font(.system(size: 16, weight: .bold))
+                                .foregroundStyle(Color.warmCard)
+                        }
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Gemini AI")
+                                .font(.system(size: 13, weight: .black))
+                                .foregroundStyle(Color.warmCard)
+                            Text("Personalized financial advice")
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundStyle(Color.warmCard.opacity(0.45))
+                        }
+                        Spacer()
+                        Button {
+                            Task { await vm.fetchAIRecommendation() }
+                        } label: {
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(Color.warmOrange.opacity(0.15))
+                                    .frame(width: 32, height: 32)
+                                Image(systemName: "arrow.clockwise")
+                                    .font(.system(size: 12, weight: .bold))
+                                    .foregroundStyle(Color.warmOrange)
+                                    .rotationEffect(vm.isLoadingAI ? .degrees(360) : .zero)
+                                    .animation(vm.isLoadingAI ? .linear(duration: 1).repeatForever(autoreverses: false) : .default, value: vm.isLoadingAI)
+                            }
+                        }
+                        .disabled(vm.isLoadingAI)
+                    }
+                    .padding(16)
+
+                    Rectangle()
+                        .fill(Color.warmCard.opacity(0.08))
+                        .frame(height: 1)
+
                     Text(recommendation)
-                        .font(.subheadline)
-                        .foregroundStyle(.white.opacity(0.9))
-                        .lineSpacing(4)
+                        .font(.system(size: 13, weight: .regular))
+                        .foregroundStyle(Color.warmCard.opacity(0.85))
+                        .lineSpacing(5)
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(16)
-                        .frame(maxWidth: .infinity, minHeight: 0, maxHeight: .infinity, alignment: .leading)
-                        .background(Color.purple.opacity(0.1))
-                        .clipShape(RoundedRectangle(cornerRadius: 18))
-                        .overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.purple.opacity(0.2), lineWidth: 1))
-                    
+                }
+                .background(Color.warmDark)
+                .clipShape(RoundedRectangle(cornerRadius: 18))
+                .shadow(color: .black.opacity(0.3), radius: 8, x: 0, y: 3)
+
+            } else {
+                // Empty state + generate button
+                VStack(spacing: 16) {
+                    // Empty state card
+                    VStack(spacing: 12) {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 14)
+                                .fill(Color.warmOrange.opacity(0.12))
+                                .frame(width: 56, height: 56)
+                            Image(systemName: "sparkles")
+                                .font(.system(size: 24, weight: .bold))
+                                .foregroundStyle(Color.warmOrange)
+                        }
+                        Text("Get Personalized Advice")
+                            .font(.system(size: 15, weight: .black))
+                            .foregroundStyle(Color.warmCard)
+                        Text("Gemini AI will analyze your 4 key metrics and give you a concrete action plan.")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(Color.warmCard.opacity(0.45))
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 12)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 24)
+                    .background(Color.warmDark)
+                    .clipShape(RoundedRectangle(cornerRadius: 18))
+                    .shadow(color: .black.opacity(0.3), radius: 8, x: 0, y: 3)
+
+                    // Generate button
                     Button {
                         Task { await vm.fetchAIRecommendation() }
                     } label: {
-                        Label("Refresh Advice", systemImage: "arrow.clockwise")
-                            .font(.caption.bold())
-                            .foregroundStyle(.purple)
+                        HStack(spacing: 10) {
+                            if vm.isLoadingAI {
+                                ProgressView().tint(Color.warmCard).scaleEffect(0.85)
+                                Text("Generating...")
+                                    .font(.system(size: 15, weight: .black))
+                                    .foregroundStyle(Color.warmCard)
+                            } else {
+                                Image(systemName: "sparkles")
+                                    .font(.system(size: 15, weight: .bold))
+                                    .foregroundStyle(Color.warmCard)
+                                Text("Generate AI Advice")
+                                    .font(.system(size: 15, weight: .black))
+                                    .foregroundStyle(Color.warmCard)
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 16)
+                        .background(vm.isLoadingAI ? Color.warmOrange.opacity(0.6) : Color.warmOrange)
+                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                        .shadow(color: Color.warmOrange.opacity(0.35), radius: 8, x: 0, y: 3)
                     }
                     .disabled(vm.isLoadingAI)
                 }
-            } else {
-                Text("Click below to get personalized AI advice based on your current financial status.")
-                    .font(.caption)
-                    .foregroundStyle(.dimText)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 10)
-            }
-            
-            if vm.aiRecommendation == nil {
-                Button {
-                    Task { await vm.fetchAIRecommendation() }
-                } label: {
-                    HStack(spacing: 10) {
-                        if vm.isLoadingAI {
-                            ProgressView().tint(.white)
-                            Text("Generating...")
-                        } else {
-                            Image(systemName: "sparkles")
-                            Text("Generate AI Advice")
-                        }
-                    }
-                    .fontWeight(.bold)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
-                }
-                .buttonStyle(.glassProminent)
-                .tint(.purple)
-                .disabled(vm.isLoadingAI)
             }
         }
     }
-    
-    private func explanationRow(title: String, value: String, desc: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text(title).font(.subheadline.bold()).foregroundStyle(.white)
-                Spacer()
-                Text(value).font(.subheadline.bold()).foregroundStyle(.white)
+
+    // MARK: - Helpers
+    private func sectionHeader(icon: String, title: String) -> some View {
+        HStack(spacing: 8) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color.warmOrange.opacity(0.18))
+                    .frame(width: 30, height: 30)
+                Image(systemName: icon)
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(Color.warmOrange)
             }
-            Text(desc).font(.caption2).foregroundStyle(.dimText)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                    .font(.system(size: 16, weight: .black))
+                    .foregroundStyle(Color.warmCard)
+                Rectangle()
+                    .fill(Color.warmOrange)
+                    .frame(width: 20, height: 3)
+                    .clipShape(Capsule())
+            }
         }
+    }
+
+    private func metricTile(icon: String, title: String, value: String, desc: String, status: String, statusOk: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .top) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 9)
+                        .fill(Color.warmOrange.opacity(0.18))
+                        .frame(width: 34, height: 34)
+                    Image(systemName: icon)
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(Color.warmOrange)
+                }
+                Spacer()
+                Text(status)
+                    .font(.system(size: 9, weight: .black))
+                    .foregroundStyle(statusOk ? Color.neonGreen : Color.neonRed)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background((statusOk ? Color.neonGreen : Color.neonRed).opacity(0.12), in: Capsule())
+            }
+            .padding(.bottom, 10)
+
+            Text(title)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(Color.warmCard.opacity(0.45))
+                .padding(.bottom, 4)
+
+            Text(value)
+                .font(.system(size: 18, weight: .black))
+                .foregroundStyle(Color.warmCard)
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+                .padding(.bottom, 6)
+
+            Text(desc)
+                .font(.system(size: 9, weight: .medium))
+                .foregroundStyle(Color.warmCard.opacity(0.35))
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Spacer(minLength: 0)
+
+            Rectangle()
+                .fill(Color.warmOrange)
+                .frame(height: 3)
+                .frame(maxWidth: 28)
+                .clipShape(Capsule())
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity)
+        .frame(height: 165)
+        .background(Color.warmDark)
+        .clipShape(RoundedRectangle(cornerRadius: 18))
+        .shadow(color: .black.opacity(0.3), radius: 8, x: 0, y: 3)
     }
 }
 
@@ -2640,50 +2634,51 @@ struct SplitBillHistoryView: View {
 
 struct SplitBillHistoryRow: View {
     let record: SplitBillRecord
-    
+
     var body: some View {
-        HStack(spacing: 16) {
-            // Icon
+        HStack(spacing: 14) {
             ZStack {
                 RoundedRectangle(cornerRadius: 12)
-                    .fill(Color(red: 0.3, green: 0.6, blue: 1.0).opacity(0.15))
-                    .frame(width: 48, height: 48)
+                    .fill(Color.warmOrange)
+                    .frame(width: 46, height: 46)
                 Image(systemName: "receipt")
-                    .font(.title3)
-                    .foregroundStyle(Color(red: 0.3, green: 0.6, blue: 1.0))
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundStyle(Color.warmCard)
             }
-            
+
             VStack(alignment: .leading, spacing: 4) {
                 Text(record.billName)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.white)
-                
+                    .font(.system(size: 14, weight: .black))
+                    .foregroundStyle(Color.warmCard)
+
                 HStack(spacing: 4) {
                     Image(systemName: "person.fill")
-                        .font(.system(size: 10))
+                        .font(.system(size: 9, weight: .bold))
                     Text("By \(record.payerName)")
+                        .font(.system(size: 11, weight: .medium))
                 }
-                .font(.caption2)
-                .foregroundStyle(.glassText)
+                .foregroundStyle(Color.warmCard.opacity(0.45))
             }
-            
+
             Spacer()
-            
+
             VStack(alignment: .trailing, spacing: 4) {
                 Text("\(record.currency.symbol) \(formatNumber(record.totalAmount))")
-                    .font(.subheadline.weight(.bold))
-                    .foregroundStyle(Color(red: 0.3, green: 0.6, blue: 1.0))
-                
+                    .font(.system(size: 13, weight: .black))
+                    .foregroundStyle(Color.warmOrange)
+
                 Text(record.date, style: .date)
-                    .font(.system(size: 10))
-                    .foregroundStyle(.dimText)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(Color.warmCard.opacity(0.35))
             }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
-        .glassEffect(in: .rect(cornerRadius: 18))
+        .background(Color.warmDark)
+        .clipShape(RoundedRectangle(cornerRadius: 18))
+        .shadow(color: .black.opacity(0.28), radius: 8, x: 0, y: 3)
     }
-    
+
     private func formatNumber(_ value: Double) -> String {
         let formatter = NumberFormatter()
         formatter.numberStyle = .decimal
@@ -3041,5 +3036,180 @@ struct SplitBillDetailView: View {
         formatter.numberStyle = .decimal
         formatter.maximumFractionDigits = 2
         return formatter.string(from: NSNumber(value: value)) ?? "\(value)"
+    }
+}
+
+struct BalanceBreakdownSheet: View {
+    @Environment(AppStore.self) private var store
+    @Environment(\.dismiss) private var dismiss
+    
+    let totalWalletBalance: Double
+    let totalReceivables: Double
+    let totalCCDebt: Double
+    let totalNetWorth: Double
+    @Binding var liabilityMode: CCLiabilityMode
+    
+    private var currencyManager: CurrencyManager {
+        store.currencyManager
+    }
+    
+    private var baseCurrency: Currency {
+        currencyManager.baseCurrency
+    }
+    
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                Color.appBg.ignoresSafeArea()
+                
+                ScrollView(showsIndicators: false) {
+                    VStack(spacing: 32) {
+                        // Liability Mode Selector
+                        Picker("CC Liability Mode", selection: $liabilityMode) {
+                            Text("Total Debt").tag(CCLiabilityMode.total)
+                            Text("Monthly Due").tag(CCLiabilityMode.monthly)
+                        }
+                        .pickerStyle(.segmented)
+                        .padding(.horizontal, 16)
+                        .padding(.top, 16)
+
+                        // Summary Header
+                        VStack(spacing: 12) {
+                            ZStack {
+                                Circle()
+                                    .fill(Color.warmOrange.opacity(0.12))
+                                    .frame(width: 80, height: 80)
+                                Image(systemName: "equal.circle.fill")
+                                    .font(.system(size: 40, weight: .bold))
+                                    .foregroundStyle(Color.warmOrange)
+                            }
+                            
+                            VStack(spacing: 4) {
+                                Text("Total Net Worth")
+                                    .font(.system(size: 14, weight: .bold))
+                                    .foregroundStyle(Color.warmOrange)
+                                    .kerning(1.2)
+                                    .textCase(.uppercase)
+                                
+                                Text(currencyManager.format(amount: totalNetWorth, currency: baseCurrency))
+                                    .font(.system(size: 34, weight: .black))
+                                    .foregroundStyle(Color.warmCard)
+                            }
+                        }
+                        
+                        // Calculation Breakdown
+                        VStack(spacing: 0) {
+                            breakdownRow(
+                                title: "Wallet Balances",
+                                description: "Cash and bank accounts",
+                                amount: totalWalletBalance,
+                                icon: "wallet.bifold.fill",
+                                color: .neonGreen,
+                                isPositive: true
+                            )
+                            
+                            Divider().background(Color.white.opacity(0.05)).padding(.leading, 60)
+                            
+                            breakdownRow(
+                                title: "Receivables",
+                                description: liabilityMode == .total ? "Total remaining balance" : "Total installments due this month",
+                                amount: totalReceivables,
+                                icon: "person.2.fill",
+                                color: Color(red: 0.3, green: 0.6, blue: 1.0),
+                                isPositive: true
+                            )
+                            
+                            Divider().background(Color.white.opacity(0.05)).padding(.leading, 60)
+                            
+                            breakdownRow(
+                                title: "Credit Card Debt",
+                                description: liabilityMode == .total ? "Total outstanding liabilities" : "Total due this month",
+                                amount: totalCCDebt,
+                                icon: "creditcard.fill",
+                                color: .neonRed,
+                                isPositive: false
+                            )
+                        }
+                        .background(Color.warmDark)
+                        .clipShape(RoundedRectangle(cornerRadius: 24))
+                        .shadow(color: .black.opacity(0.3), radius: 12, x: 0, y: 4)
+                        
+                        // Educational Note
+                        VStack(alignment: .leading, spacing: 12) {
+                            HStack(spacing: 8) {
+                                Image(systemName: "info.circle.fill")
+                                    .foregroundStyle(Color.warmOrange)
+                                Text("The Formula")
+                                    .font(.headline)
+                                    .foregroundStyle(Color.warmCard)
+                            }
+                            
+                            Text("Total Balance = (Wallets + Receivables) - CC \(liabilityMode == .total ? "Total" : "Monthly Due")")
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundStyle(Color.warmCard.opacity(0.8))
+                                .padding(.vertical, 8)
+                                .padding(.horizontal, 12)
+                                .background(Color.warmOrange.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+                            
+                            Text(liabilityMode == .total 
+                                ? "This mode subtracts all your outstanding credit card transactions and remaining installment principal, giving you a full long-term view of your net worth."
+                                : "This mode only subtracts what you must pay this month (current bill + installments), showing your immediate liquidity after monthly obligations.")
+                                .font(.system(size: 13))
+                                .foregroundStyle(Color.warmCard.opacity(0.5))
+                                .lineSpacing(4)
+                        }
+                        .padding(24)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.warmDark.opacity(0.5))
+                        .clipShape(RoundedRectangle(cornerRadius: 20))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 20)
+                                .stroke(Color.white.opacity(0.05), lineWidth: 1)
+                        )
+                    }
+                    .padding(16)
+                    .padding(.bottom, 40)
+                }
+            }
+            .navigationTitle("Balance Calculation")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(Color.warmOrange)
+                }
+            }
+        }
+    }
+    
+    private func breakdownRow(title: String, description: String, amount: Double, icon: String, color: Color, isPositive: Bool) -> some View {
+        HStack(spacing: 16) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(color.opacity(0.12))
+                    .frame(width: 44, height: 44)
+                Image(systemName: icon)
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundStyle(color)
+            }
+            
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundStyle(Color.warmCard)
+                Text(description)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.warmCard.opacity(0.4))
+            }
+            
+            Spacer()
+            
+            Text((isPositive ? "" : "-") + currencyManager.format(amount: amount, currency: baseCurrency))
+                .font(.system(size: 16, weight: .black))
+                .foregroundStyle(isPositive ? Color.warmCard : .neonRed)
+        }
+        .padding(.vertical, 16)
+        .padding(.horizontal, 20)
     }
 }

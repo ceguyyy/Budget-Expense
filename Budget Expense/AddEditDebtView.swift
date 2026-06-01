@@ -14,16 +14,33 @@ struct AddEditDebtView: View {
     @State private var hasDueDate = false
     @State private var dueDate = Date().addingTimeInterval(86400 * 30)
     @State private var isSettled = false
+    
+    // Installment support
+    @State private var isInstallment = false
+    @State private var monthlyAmountStr = ""
+    @State private var totalMonthsStr = "12"
+    @State private var paidMonthsStr = "0"
 
     private var isEditing: Bool { editTarget != nil }
     private var title: String { isEditing ? "Edit Receivable" : "Add Receivable" }
 
     private var parsedAmount: Double {
-        Double(amountStr.replacingOccurrences(of: ",", with: "")) ?? 0
+        if isInstallment {
+            let monthly = Double(monthlyAmountStr.replacingOccurrences(of: ",", with: "")) ?? 0
+            let months = Double(totalMonthsStr) ?? 0
+            return monthly * months
+        }
+        return Double(amountStr.replacingOccurrences(of: ",", with: "")) ?? 0
     }
 
     private var canSave: Bool {
-        !personName.trimmingCharacters(in: .whitespaces).isEmpty && parsedAmount > 0
+        let basic = !personName.trimmingCharacters(in: .whitespaces).isEmpty
+        if isInstallment {
+            let monthly = Double(monthlyAmountStr.replacingOccurrences(of: ",", with: "")) ?? 0
+            let months = Int(totalMonthsStr) ?? 0
+            return basic && monthly > 0 && months > 0
+        }
+        return basic && parsedAmount > 0
     }
 
     var body: some View {
@@ -106,6 +123,55 @@ struct AddEditDebtView: View {
                                         .multilineTextAlignment(.trailing)
                                         #if os(iOS)
                                         .keyboardType(.decimalPad)
+                                        #endif
+                                }
+                            }
+                        }
+
+                        formSection {
+                            Toggle(isOn: $isInstallment) {
+                                Label("Installment Plan", systemImage: "calendar.badge.clock")
+                                    .foregroundStyle(.white.opacity(0.7))
+                                    .font(.subheadline)
+                            }
+                            .tint(Color.neonGreen)
+
+                            if isInstallment {
+                                Divider().background(.white.opacity(0.15))
+                                
+                                fieldRow(label: "Monthly", systemImage: "arrow.right.circle") {
+                                    HStack(spacing: 8) {
+                                        Text(currency.symbol)
+                                            .foregroundStyle(.white.opacity(0.6))
+                                            .font(.subheadline)
+                                        TextField("0", text: $monthlyAmountStr)
+                                            .foregroundStyle(.white)
+                                            .multilineTextAlignment(.trailing)
+                                            #if os(iOS)
+                                            .keyboardType(.decimalPad)
+                                            #endif
+                                    }
+                                }
+                                
+                                Divider().background(.white.opacity(0.15))
+                                
+                                fieldRow(label: "Total Months", systemImage: "number") {
+                                    TextField("12", text: $totalMonthsStr)
+                                        .foregroundStyle(.white)
+                                        .multilineTextAlignment(.trailing)
+                                        #if os(iOS)
+                                        .keyboardType(.numberPad)
+                                        #endif
+                                }
+                                
+                                Divider().background(.white.opacity(0.15))
+                                
+                                fieldRow(label: "Paid Months", systemImage: "checkmark.circle") {
+                                    TextField("0", text: $paidMonthsStr)
+                                        .foregroundStyle(.white)
+                                        .multilineTextAlignment(.trailing)
+                                        #if os(iOS)
+                                        .keyboardType(.numberPad)
                                         #endif
                                 }
                             }
@@ -206,13 +272,24 @@ struct AddEditDebtView: View {
                 Spacer()
 
                 VStack(alignment: .trailing, spacing: 2) {
-                    Text(currency == .idr ? formatIDR(parsedAmount) : "$\(String(format: "%.2f", parsedAmount))")
-                        .font(.title3)
-                        .fontWeight(.bold)
-                        .foregroundStyle(Color.neonGreen)
-                    Text(currency.rawValue)
-                        .font(.caption)
-                        .foregroundStyle(.white.opacity(0.5))
+                    if isInstallment {
+                        let monthly = Double(monthlyAmountStr.replacingOccurrences(of: ",", with: "")) ?? 0
+                        Text(currency.symbol + " " + String(format: "%.0f", monthly) + "/mo")
+                            .font(.subheadline)
+                            .fontWeight(.bold)
+                            .foregroundStyle(Color.neonGreen)
+                        Text("Total: " + (currency == .idr ? formatIDR(parsedAmount) : "$\(String(format: "%.2f", parsedAmount))"))
+                            .font(.caption2)
+                            .foregroundStyle(.white.opacity(0.5))
+                    } else {
+                        Text(currency == .idr ? formatIDR(parsedAmount) : "$\(String(format: "%.2f", parsedAmount))")
+                            .font(.title3)
+                            .fontWeight(.bold)
+                            .foregroundStyle(Color.neonGreen)
+                        Text(currency.rawValue)
+                            .font(.caption)
+                            .foregroundStyle(.white.opacity(0.5))
+                    }
                 }
             }
 
@@ -271,31 +348,49 @@ struct AddEditDebtView: View {
             dueDate = dd
         }
         isSettled = t.isSettled
+        
+        // Installment prefill
+        isInstallment = t.isInstallment
+        monthlyAmountStr = String(format: "%.0f", t.monthlyAmount)
+        totalMonthsStr = "\(t.totalMonths)"
+        paidMonthsStr = "\(t.paidMonths)"
     }
 
     private func save() {
         let trimmed = personName.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty, parsedAmount > 0 else { return }
 
+        let monthly = Double(monthlyAmountStr.replacingOccurrences(of: ",", with: "")) ?? 0
+        let totalM = Int(totalMonthsStr) ?? 0
+        let paidM = Int(paidMonthsStr) ?? 0
+
         if let existing = editTarget {
             var updated = existing
             updated.personName = trimmed
-            updated.amount = parsedAmount
+            updated.amount = isInstallment ? (monthly * Double(totalM)) : parsedAmount
             updated.currency = currency
             updated.note = note
             updated.date = date
             updated.dueDate = hasDueDate ? dueDate : nil
             updated.isSettled = isSettled
+            updated.isInstallment = isInstallment
+            updated.monthlyAmount = monthly
+            updated.totalMonths = totalM
+            updated.paidMonths = paidM
             store.updateDebt(updated)
         } else {
             let debt = Debt(
                 personName: trimmed,
-                amount: parsedAmount,
+                amount: isInstallment ? (monthly * Double(totalM)) : parsedAmount,
                 currency: currency,
                 note: note,
                 date: date,
                 dueDate: hasDueDate ? dueDate : nil,
-                isSettled: false
+                isSettled: false,
+                isInstallment: isInstallment,
+                monthlyAmount: monthly,
+                totalMonths: totalM,
+                paidMonths: paidM
             )
             store.addDebt(debt)
         }

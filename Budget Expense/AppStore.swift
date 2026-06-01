@@ -227,9 +227,19 @@ struct Debt: Identifiable, Codable {
     var dueDate: Date?
     var isSettled: Bool = false
     var items: [DebtItem]? = nil // Optional field to store receipt items
+    
+    // Installment support
+    var isInstallment: Bool = false
+    var monthlyAmount: Double = 0
+    var totalMonths: Int = 0
+    var paidMonths: Int = 0
 
     var initials: String { String(personName.prefix(2)).uppercased() }
     func formattedAmount() -> String { formatCurrency(amount, currency: currency) }
+    
+    var remainingInstallmentAmount: Double {
+        isInstallment ? monthlyAmount * Double(max(0, totalMonths - paidMonths)) : amount
+    }
 }
 
 // MARK: - Split Bill Records (History)
@@ -362,18 +372,32 @@ class AppStore {
     func deleteCCTransaction(_ txId: UUID, from cardId: UUID) {
         mutateCard(cardId) { $0.transactions.removeAll { $0.id == txId } }
     }
+    
+    func toggleCCTransactionPaid(_ txId: UUID, from cardId: UUID) {
+        mutateCard(cardId) { card in
+            if let idx = card.transactions.firstIndex(where: { $0.id == txId }) {
+                card.transactions[idx].isPaid.toggle()
+            }
+        }
+    }
 
     func payCurrentCycleBill(for cardId: UUID) {
+        payCycleBill(for: cardId, offset: 0)
+    }
+    
+    func payCycleBill(for cardId: UUID, offset: Int) {
         guard let idx = creditCards.firstIndex(where: { $0.id == cardId }) else { return }
-        let (start, end) = billingCycleDates(for: creditCards[idx])
+        let (start, end) = billingCycleDates(for: creditCards[idx], offset: offset)
         for i in creditCards[idx].transactions.indices {
             if creditCards[idx].transactions[i].date >= start,
                creditCards[idx].transactions[i].date < end {
                 creditCards[idx].transactions[i].isPaid = true
             }
         }
-        for i in creditCards[idx].installments.indices where !creditCards[idx].installments[i].isCompleted {
-            creditCards[idx].installments[i].paidMonths += 1
+        if offset == 0 {
+            for i in creditCards[idx].installments.indices where !creditCards[idx].installments[i].isCompleted {
+                creditCards[idx].installments[i].paidMonths += 1
+            }
         }
         saveCC()
     }
@@ -407,12 +431,12 @@ class AppStore {
 
     // MARK: Billing Cycle Logic
 
-    func billingCycleDates(for card: CreditCard) -> (start: Date, end: Date) {
+    func billingCycleDates(for card: CreditCard, offset: Int = 0) -> (start: Date, end: Date) {
         let cal = Calendar.current
-        let now = Date()
-        let day = cal.component(.day, from: now)
-        let m   = cal.component(.month, from: now)
-        let y   = cal.component(.year, from: now)
+        let referenceDate = cal.date(byAdding: .month, value: offset, to: Date())!
+        let day = cal.component(.day, from: referenceDate)
+        let m   = cal.component(.month, from: referenceDate)
+        let y   = cal.component(.year, from: referenceDate)
         let cycleDay = min(card.billingCycleDay, 28)
 
         var comps = DateComponents()
@@ -423,31 +447,33 @@ class AppStore {
             comps.year  = m == 1 ? y - 1 : y
             comps.month = m == 1 ? 12 : m - 1
         }
-        let start = cal.date(from: comps) ?? now
-        let end   = cal.date(byAdding: .month, value: 1, to: start) ?? now
+        let start = cal.date(from: comps) ?? referenceDate
+        let end   = cal.date(byAdding: .month, value: 1, to: start) ?? referenceDate
         return (start, end)
     }
 
-    func currentCycleTransactions(for card: CreditCard) -> [CCTransaction] {
-        let (s, e) = billingCycleDates(for: card)
+    func currentCycleTransactions(for card: CreditCard, offset: Int = 0) -> [CCTransaction] {
+        let (s, e) = billingCycleDates(for: card, offset: offset)
         return card.transactions.filter { $0.date >= s && $0.date < e }
     }
 
-    func currentCycleBill(for card: CreditCard) -> Double {
-        currentCycleTransactions(for: card).filter { !$0.isPaid }.reduce(0) { $0 + $1.amount }
+    func currentCycleBill(for card: CreditCard, offset: Int = 0) -> Double {
+        currentCycleTransactions(for: card, offset: offset).filter { !$0.isPaid }.reduce(0) { $0 + $1.amount }
     }
 
     func currentMonthInstallments(for card: CreditCard) -> Double {
         card.installments.filter { !$0.isCompleted }.reduce(0) { $0 + $1.monthlyPayment }
     }
 
-    func totalDueThisMonth(for card: CreditCard) -> Double {
-        currentCycleBill(for: card) + currentMonthInstallments(for: card)
+    func totalDueThisMonth(for card: CreditCard, offset: Int = 0) -> Double {
+        let bill = currentCycleBill(for: card, offset: offset)
+        let inst = offset == 0 ? currentMonthInstallments(for: card) : 0
+        return bill + inst
     }
 
-    func billingCycleDueDate(for card: CreditCard) -> Date {
+    func billingCycleDueDate(for card: CreditCard, offset: Int = 0) -> Date {
         let cal = Calendar.current
-        let (_, cycleEnd) = billingCycleDates(for: card)
+        let (_, cycleEnd) = billingCycleDates(for: card, offset: offset)
         var comps = cal.dateComponents([.year, .month], from: cycleEnd)
         comps.day = min(card.dueDay, 28)
         return cal.date(from: comps) ?? cycleEnd
@@ -465,7 +491,15 @@ class AppStore {
     // ✅ Total receivables in base currency
     var totalReceivables: Double {
         debts.filter { !$0.isSettled }.reduce(0) { sum, debt in
-            sum + currencyManager.toBaseCurrency(amount: debt.amount, from: debt.currency)
+            sum + currencyManager.toBaseCurrency(amount: debt.remainingInstallmentAmount, from: debt.currency)
+        }
+    }
+    
+    // ✅ Total receivables due this month in base currency
+    var totalReceivablesMonthly: Double {
+        debts.filter { !$0.isSettled }.reduce(0) { sum, debt in
+            let amount = debt.isInstallment ? debt.monthlyAmount : debt.amount
+            return sum + currencyManager.toBaseCurrency(amount: amount, from: debt.currency)
         }
     }
     

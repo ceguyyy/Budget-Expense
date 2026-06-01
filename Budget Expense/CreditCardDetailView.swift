@@ -18,6 +18,8 @@ struct CreditCardDetailView: View {
     
     @State private var showAddInst   = false
     @State private var editInstTarget: Installment?
+    
+    @State private var cycleOffset = 0
 
     private var card: CreditCard? { store.creditCards.first { $0.id == cardId } }
     var body: some View {
@@ -183,16 +185,51 @@ struct CreditCardDetailView: View {
     // MARK: Billing Info
 
     private func billingInfoCard(_ card: CreditCard) -> some View {
-        let (cycleStart, cycleEnd) = store.billingCycleDates(for: card)
-        let due = store.billingCycleDueDate(for: card)
+        let (cycleStart, cycleEnd) = store.billingCycleDates(for: card, offset: cycleOffset)
+        let due = store.billingCycleDueDate(for: card, offset: cycleOffset)
         let df = DateFormatter(); df.dateFormat = "d MMM"
 
         return VStack(spacing: 16) {
             HStack {
-                infoItem("Statement Cycle", "\(df.string(from: cycleStart)) - \(df.string(from: cycleEnd))", "calendar")
-                Divider().background(Color.white.opacity(0.1)).frame(height: 30)
+                Button { withAnimation { cycleOffset -= 1 } } label: {
+                    Image(systemName: "chevron.left.circle.fill")
+                        .font(.title3)
+                        .foregroundStyle(.glassText)
+                }
+                .buttonStyle(.plain)
+                
+                Spacer()
+                
+                VStack(spacing: 4) {
+                    Text("\(df.string(from: cycleStart)) - \(df.string(from: cycleEnd))")
+                        .font(.caption.bold())
+                        .foregroundStyle(.white)
+                    Text("Statement Cycle")
+                        .font(.system(size: 9))
+                        .foregroundStyle(.dimText)
+                }
+                
+                Spacer()
+                
+                Button { withAnimation { cycleOffset += 1 } } label: {
+                    Image(systemName: "chevron.right.circle.fill")
+                        .font(.title3)
+                        .foregroundStyle(cycleOffset >= 0 ? .glassText.opacity(0.3) : .glassText)
+                }
+                .disabled(cycleOffset >= 0)
+                .buttonStyle(.plain)
+            }
+            .padding(.bottom, 4)
+            
+            HStack {
                 infoItem("Due Date", df.string(from: due), "clock.badge.exclamationmark")
                     .foregroundStyle(isNearDue(due) ? Color.neonRed : .white)
+                
+                Divider().background(Color.white.opacity(0.1)).frame(height: 30)
+                
+                let isPaid = store.currentCycleBill(for: card, offset: cycleOffset) == 0 && !store.currentCycleTransactions(for: card, offset: cycleOffset).isEmpty
+                infoItem("Status", isPaid ? "Paid" : "Unpaid", isPaid ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
+                    .foregroundStyle(isPaid ? .neonGreen : (cycleOffset < 0 ? .neonRed : .white))
             }
             
             Divider().background(Color.white.opacity(0.1))
@@ -201,53 +238,58 @@ struct CreditCardDetailView: View {
                 HStack {
                     Text("Cycle Transactions").font(.caption).foregroundStyle(.glassText)
                     Spacer()
-                    Text(formatCurrency(store.currentCycleBill(for: card), currency: card.currency)).font(.subheadline.bold())
+                    Text(formatCurrency(store.currentCycleBill(for: card, offset: cycleOffset), currency: card.currency)).font(.subheadline.bold())
                 }
-                HStack {
-                    Text("Monthly Installments").font(.caption).foregroundStyle(.glassText)
-                    Spacer()
-                    Text(formatCurrency(store.currentMonthInstallments(for: card), currency: card.currency)).font(.subheadline.bold())
+                
+                if cycleOffset == 0 {
+                    HStack {
+                        Text("Monthly Installments").font(.caption).foregroundStyle(.glassText)
+                        Spacer()
+                        Text(formatCurrency(store.currentMonthInstallments(for: card), currency: card.currency)).font(.subheadline.bold())
+                    }
                 }
                 
                 HStack {
-                    Text("TOTAL DUE THIS MONTH")
+                    Text(cycleOffset == 0 ? "TOTAL DUE THIS MONTH" : "TOTAL DUE FOR CYCLE")
                         .font(.caption.weight(.bold))
                         .foregroundStyle(.white)
                     Spacer()
-                    Text(formatCurrency(store.totalDueThisMonth(for: card), currency: card.currency))
+                    Text(formatCurrency(store.totalDueThisMonth(for: card, offset: cycleOffset), currency: card.currency))
                         .font(.title3.bold())
-                        .foregroundStyle(Color.neonRed)
+                        .foregroundStyle(store.totalDueThisMonth(for: card, offset: cycleOffset) > 0 ? Color.neonRed : .neonGreen)
                 }
                 .padding(.top, 4)
                 
-                Button {
-                    Task {
-                        let (start, end) = store.billingCycleDates(for: card)
-                        let dueDate = store.billingCycleDueDate(for: card)
-                        let totalDue = formatCurrency(store.totalDueThisMonth(for: card), currency: card.currency)
-                        
-                        print("🛠 DEBUG: Preparing CC Calendar Sync")
-                        print("Card: \(card.bank) - \(card.name)")
-                        print("Due: \(dueDate)")
-                        
-                        let success = await calendarManager.syncToGoogleCalendar(
-                            title: "\(card.bank) - \(card.name)",
-                            dueDate: dueDate,
-                            notes: "Billing Cycle: \(df.string(from: start)) - \(df.string(from: end))\nTotal Due: \(totalDue)"
-                        )
-                        calendarAlertMsg = success ? "Due date synced to your calendar!" : "Failed to sync to calendar."
-                        showCalendarAlert = true
+                if cycleOffset == 0 {
+                    Button {
+                        Task {
+                            let (start, end) = store.billingCycleDates(for: card)
+                            let dueDate = store.billingCycleDueDate(for: card)
+                            let totalDue = formatCurrency(store.totalDueThisMonth(for: card), currency: card.currency)
+                            
+                            print("🛠 DEBUG: Preparing CC Calendar Sync")
+                            print("Card: \(card.bank) - \(card.name)")
+                            print("Due: \(dueDate)")
+                            
+                            let success = await calendarManager.syncToGoogleCalendar(
+                                title: "\(card.bank) - \(card.name)",
+                                dueDate: dueDate,
+                                notes: "Billing Cycle: \(df.string(from: start)) - \(df.string(from: end))\nTotal Due: \(totalDue)"
+                            )
+                            calendarAlertMsg = success ? "Due date synced to your calendar!" : "Failed to sync to calendar."
+                            showCalendarAlert = true
+                        }
+                    } label: {
+                        HStack {
+                            Image(systemName: "calendar.badge.plus")
+                            Text("Sync Due Date to Calendar")
+                        }
+                        .font(.caption.bold())
+                        .foregroundStyle(.blue)
+                        .padding(.top, 4)
                     }
-                } label: {
-                    HStack {
-                        Image(systemName: "calendar.badge.plus")
-                        Text("Sync Due Date to Calendar")
-                    }
-                    .font(.caption.bold())
-                    .foregroundStyle(.blue)
-                    .padding(.top, 4)
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
             }
         }
         .padding(20)
@@ -272,25 +314,26 @@ struct CreditCardDetailView: View {
     // MARK: Pay Button
 
     private func payNowButton(_ card: CreditCard) -> some View {
-        Button { store.payCurrentCycleBill(for: card.id) } label: {
+        Button { store.payCycleBill(for: card.id, offset: cycleOffset) } label: {
             HStack(spacing: 8) {
                 Image(systemName: "checkmark.seal.fill")
-                Text("Mark as Paid").fontWeight(.semibold)
+                Text(cycleOffset == 0 ? "Mark Month as Paid" : "Mark Cycle as Paid").fontWeight(.semibold)
             }
             .frame(maxWidth: .infinity).padding(.vertical, 15)
         }
         .buttonStyle(.glassProminent)
-        .disabled(store.totalDueThisMonth(for: card) == 0)
-        .opacity(store.totalDueThisMonth(for: card) > 0 ? 1 : 0.38)
+        .disabled(store.totalDueThisMonth(for: card, offset: cycleOffset) == 0)
+        .opacity(store.totalDueThisMonth(for: card, offset: cycleOffset) > 0 ? 1 : 0.38)
     }
 
     // MARK: Transactions Section (ViewBuilder allows rendering rows directly in List)
 
     @ViewBuilder
     private func transactionsSection(_ card: CreditCard) -> some View {
-        let txs = store.currentCycleTransactions(for: card).sorted { $0.date > $1.date }
+        let txs = store.currentCycleTransactions(for: card, offset: cycleOffset).sorted { $0.date > $1.date }
+        let title = cycleOffset == 0 ? "THIS CYCLE'S TRANSACTIONS" : "TRANSACTIONS FOR CYCLE"
         
-        sectionHeader("THIS CYCLE'S TRANSACTIONS", count: txs.count)
+        sectionHeader(title, count: txs.count)
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)
             .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 10, trailing: 16))
@@ -305,6 +348,9 @@ struct CreditCardDetailView: View {
                 CCTransactionRow(tx: tx, currency: card.currency)
                     // Context Menu
                     .contextMenu {
+                        Button { store.toggleCCTransactionPaid(tx.id, from: card.id) }
+                        label: { Label(tx.isPaid ? "Mark as Unpaid" : "Mark as Paid", systemImage: tx.isPaid ? "xmark.circle" : "checkmark.circle") }
+
                         Button { editTxTarget = tx }
                         label: { Label("Edit", systemImage: "pencil") }
                         
@@ -313,6 +359,10 @@ struct CreditCardDetailView: View {
                     }
                     // Swipe Actions
                     .swipeActions(edge: .leading) {
+                        Button { store.toggleCCTransactionPaid(tx.id, from: card.id) }
+                        label: { Label(tx.isPaid ? "Unpaid" : "Paid", systemImage: tx.isPaid ? "xmark.circle" : "checkmark.circle") }
+                        .tint(tx.isPaid ? .gray : .neonGreen)
+
                         Button { editTxTarget = tx }
                         label: { Label("Edit", systemImage: "pencil") }
                         .tint(.blue)

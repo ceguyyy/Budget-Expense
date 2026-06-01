@@ -3,11 +3,15 @@ import SwiftUI
 // MARK: - Shared Colors
 
 extension Color {
-    static let neonGreen = Color(red: 0.20, green: 0.90, blue: 0.50)
-    static let neonRed   = Color(red: 1.00, green: 0.30, blue: 0.30)
-    static let appBg     = Color(red: 0.04, green: 0.04, blue: 0.05)
-    static let glassText = Color(white: 0.55)
-    static let dimText   = Color(white: 0.35)
+    static let neonGreen  = Color(red: 0.20, green: 0.90, blue: 0.50)
+    static let neonRed    = Color(red: 1.00, green: 0.30, blue: 0.30)
+    // Warm neubrutalism palette
+    static let appBg      = Color(red: 0.110, green: 0.098, blue: 0.086)   // #1C1916 warm charcoal
+    static let warmCard   = Color(red: 0.961, green: 0.929, blue: 0.871)   // #F5EDD8 cream
+    static let warmOrange = Color(red: 0.910, green: 0.376, blue: 0.220)   // #E86038 orange
+    static let warmDark   = Color(red: 0.149, green: 0.133, blue: 0.118)   // #26221E dark card
+    static let glassText  = Color(white: 0.55)
+    static let dimText    = Color(white: 0.35)
     
     // MARK: - Hex Initialization & Conversion
     
@@ -61,11 +65,14 @@ extension Color {
 // SE-0299: allow .glassText / .dimText / .neonGreen / .neonRed / .appBg
 // in any ShapeStyle-constrained context (e.g. foregroundStyle)
 extension ShapeStyle where Self == Color {
-    static var neonGreen: Color { .init(red: 0.20, green: 0.90, blue: 0.50) }
-    static var neonRed:   Color { .init(red: 1.00, green: 0.30, blue: 0.30) }
-    static var appBg:     Color { .init(red: 0.04, green: 0.04, blue: 0.05) }
-    static var glassText: Color { .init(white: 0.55) }
-    static var dimText:   Color { .init(white: 0.35) }
+    static var neonGreen:  Color { .init(red: 0.20, green: 0.90, blue: 0.50) }
+    static var neonRed:    Color { .init(red: 1.00, green: 0.30, blue: 0.30) }
+    static var appBg:      Color { .init(red: 0.110, green: 0.098, blue: 0.086) }
+    static var warmCard:   Color { .init(red: 0.961, green: 0.929, blue: 0.871) }
+    static var warmOrange: Color { .init(red: 0.910, green: 0.376, blue: 0.220) }
+    static var warmDark:   Color { .init(red: 0.149, green: 0.133, blue: 0.118) }
+    static var glassText:  Color { .init(white: 0.55) }
+    static var dimText:    Color { .init(white: 0.35) }
 }
 
 // MARK: - Shared Formatters
