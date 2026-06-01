@@ -4,7 +4,7 @@
 //
 
 import SwiftUI
-import PhotosUI // ✅ Import PhotosUI for image picking
+import PhotosUI
 
 struct AddEditWalletView: View {
     let editTarget: Wallet?
@@ -16,21 +16,43 @@ struct AddEditWalletView: View {
     @State private var currency    = Currency.idr
     @State private var isPositive  = true
     
+    // Stock support
+    @State private var isStock = false
+    @State private var stocks: [StockData] = []
+    
+    // UI state for adding/editing a stock
+    @State private var editingStockId: UUID? = nil
+    @State private var stockSymbol = ""
+    @State private var stockLots = ""
+    @State private var stockPriceStr = ""
+    
     // ✅ State for Image Picking
     @State private var selectedPhotoItem: PhotosPickerItem?
     @State private var imageData: Data?
 
     private var isEditMode: Bool { editTarget != nil }
     private var canSave: Bool {
-        !name.trimmingCharacters(in: .whitespaces).isEmpty &&
+        if isStock {
+            return !name.trimmingCharacters(in: .whitespaces).isEmpty && !stocks.isEmpty
+        }
+        return !name.trimmingCharacters(in: .whitespaces).isEmpty &&
         Double(balanceText.replacingOccurrences(of: ",", with: ".")) != nil
     }
     private var parsedBalance: Double {
-        Double(balanceText.replacingOccurrences(of: ",", with: ".")) ?? 0
+        if isStock {
+            return stocks.reduce(0) { $0 + $1.totalValue }
+        }
+        return Double(balanceText.replacingOccurrences(of: ",", with: ".")) ?? 0
     }
     private var previewWallet: Wallet {
-        Wallet(name: name.isEmpty ? "Wallet Name" : name,
-               balance: parsedBalance, currency: currency, isPositive: isPositive, imageData: imageData) // ✅ Pass imageData to preview
+        var w = Wallet(name: name.isEmpty ? (isStock ? "Stock Portfolio" : "Wallet Name") : name,
+               balance: parsedBalance, currency: currency, isPositive: isPositive, imageData: imageData)
+        w.isStock = isStock
+        if isStock {
+            w.stocks = stocks
+            w.currency = .idr 
+        }
+        return w
     }
 
     var body: some View {
@@ -40,7 +62,8 @@ struct AddEditWalletView: View {
                 ScrollView {
                     VStack(spacing: 22) {
                         previewCard
-                        imagePicker // ✅ Added image picker UI
+                        imagePicker 
+                        stockToggle
                         fields
                         saveBtn
                     }
@@ -57,7 +80,6 @@ struct AddEditWalletView: View {
                 }
             }
             .onAppear { prefill() }
-            // ✅ Load the image data when a photo is selected
             .onChange(of: selectedPhotoItem) { _, newItem in
                 Task {
                     if let data = try? await newItem?.loadTransferable(type: Data.self) {
@@ -122,72 +144,178 @@ struct AddEditWalletView: View {
         }
     }
 
+    // MARK: - Stock Toggle
+    private var stockToggle: some View {
+        Toggle(isOn: $isStock) {
+            Label("Stock (Indonesian Market)", systemImage: "chart.line.uptrend.xyaxis.circle.fill")
+                .font(.subheadline.bold())
+                .foregroundStyle(.white)
+        }
+        .padding(14)
+        .glassEffect(isStock ? .regular.tint(.neonGreen) : .regular, in: .rect(cornerRadius: 14))
+        .onChange(of: isStock) { _, newValue in
+            if newValue {
+                currency = .idr
+                isPositive = true
+            }
+        }
+    }
+
     // MARK: Fields
 
     private var fields: some View {
         VStack(spacing: 20) {
-            // Name
-            field(title: "WALLET NAME", icon: "wallet.bifold") {
-                TextField("e.g. BCA, GoPay, Dana…", text: $name)
+            // Name - Always visible
+            field(title: isStock ? "ACCOUNT DISPLAY NAME" : "WALLET NAME", icon: "wallet.bifold") {
+                TextField(isStock ? "e.g. Portfolio Saham" : "e.g. BCA, GoPay, Dana…", text: $name)
                     .textFieldStyle(.plain).font(.body).foregroundStyle(.white)
                     .padding(14).glassEffect(in: .rect(cornerRadius: 14))
             }
 
-            // Currency - Horizontal Selector
-            field(title: "CURRENCY", icon: "globe") {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 10) {
-                        ForEach(Currency.allCases, id: \.self) { c in
-                            Button { 
-                                withAnimation(.spring(duration: 0.2)) { 
-                                    currency = c 
-                                } 
-                            } label: {
-                                VStack(spacing: 6) {
-                                    Text(c.flag)
-                                        .font(.title2)
-                                    Text(c.symbol)
-                                        .font(.headline.bold())
-                                    Text(c.rawValue)
-                                        .font(.caption2.weight(.semibold))
-                                }
-                                .frame(width: 70)
-                                .padding(.vertical, 12)
-                                .glassEffect(
-                                    currency == c ? .regular.tint(Color(white: 0.6)) : .regular,
-                                    in: .rect(cornerRadius: 12)
-                                )
-                                .foregroundStyle(currency == c ? .white : Color(white: 0.38))
+            if isStock {
+                // Stock List
+                VStack(alignment: .leading, spacing: 12) {
+                    Label("YOUR STOCKS", systemImage: "list.bullet")
+                        .font(.caption.weight(.semibold)).foregroundStyle(.glassText).kerning(0.8)
+                    
+                    ForEach(stocks) { s in
+                        HStack {
+                            VStack(alignment: .leading) {
+                                Text(s.symbol).font(.headline).foregroundStyle(.white)
+                                Text("\(s.lots) Lots · Rp \(formatNumber(s.currentPrice))").font(.caption).foregroundStyle(.dimText)
                             }
-                            .buttonStyle(.plain)
+                            Spacer()
+                            VStack(alignment: .trailing) {
+                                Text(formatIDR(s.totalValue)).font(.subheadline.bold()).foregroundStyle(.neonGreen)
+                                HStack(spacing: 12) {
+                                    Button {
+                                        startEditing(s)
+                                    } label: {
+                                        Image(systemName: "pencil.circle.fill").foregroundStyle(.blue)
+                                    }
+                                    Button {
+                                        stocks.removeAll { $0.id == s.id }
+                                    } label: {
+                                        Image(systemName: "minus.circle.fill").foregroundStyle(.neonRed)
+                                    }
+                                }
+                            }
                         }
+                        .padding(12)
+                        .background(Color(white: 0.15))
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
                     }
-                    .padding(.horizontal, 2)
-                    .padding(.vertical, 2)
+                    
+                    Divider().background(Color.white.opacity(0.1))
+                    
+                    // Add/Edit Stock Input Section
+                    VStack(spacing: 12) {
+                        HStack {
+                            Text(editingStockId == nil ? "ADD NEW STOCK" : "EDITING STOCK")
+                                .font(.system(size: 10, weight: .black))
+                                .foregroundStyle(.orange)
+                            Spacer()
+                            if editingStockId != nil {
+                                Button("Cancel Edit") { cancelEditing() }
+                                    .font(.caption.bold())
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        
+                        HStack(spacing: 10) {
+                            TextField("Symbol (BMRI)", text: $stockSymbol)
+                                .textFieldStyle(.plain).font(.subheadline).padding(10)
+                                .background(Color(white: 0.2)).clipShape(RoundedRectangle(cornerRadius: 8))
+                            
+                            TextField("Lots", text: $stockLots)
+                                #if os(iOS)
+                                .keyboardType(.numberPad)
+                                #endif
+                                .textFieldStyle(.plain).font(.subheadline).padding(10)
+                                .background(Color(white: 0.2)).clipShape(RoundedRectangle(cornerRadius: 8))
+                                .frame(width: 80)
+                        }
+                        
+                        // Price Field
+                        HStack {
+                            Text("Rp")
+                                .font(.subheadline.bold()).foregroundStyle(.neonGreen)
+                            TextField("Price per share...", text: $stockPriceStr)
+                                #if os(iOS)
+                                .keyboardType(.numberPad)
+                                #endif
+                                .textFieldStyle(.plain).font(.subheadline.bold()).foregroundStyle(.white)
+                        }
+                        .padding(12)
+                        .background(Color(white: 0.2))
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        
+                        Button {
+                            confirmStock()
+                        } label: {
+                            Label(editingStockId == nil ? "Add to Portfolio" : "Update Stock", systemImage: editingStockId == nil ? "plus.circle.fill" : "checkmark.circle.fill")
+                                .font(.subheadline.bold())
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 10)
+                                .background(canConfirmStock ? .neonGreen : .gray.opacity(0.3), in: RoundedRectangle(cornerRadius: 10))
+                                .foregroundStyle(.white)
+                        }
+                        .disabled(!canConfirmStock)
+                    }
+                    .padding(14)
+                    .background(Color.white.opacity(0.05))
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
                 }
-            }
-
-            // Balance
-            field(title: "BALANCE", icon: "banknote") {
-                HStack(spacing: 10) {
-                    Text(currency.symbol).font(.headline).foregroundStyle(.glassText).frame(minWidth: 24)
-                    TextField("0", text: $balanceText)
-                        #if os(iOS)
-                        .keyboardType(.decimalPad)
-                        #endif
-                        .textFieldStyle(.plain).font(.headline).foregroundStyle(.white)
+                
+            } else {
+                field(title: "CURRENCY", icon: "globe") {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 10) {
+                            ForEach(Currency.allCases, id: \.self) { c in
+                                Button { 
+                                    withAnimation(.spring(duration: 0.2)) { currency = c } 
+                                } label: {
+                                    VStack(spacing: 6) {
+                                        Text(c.flag).font(.title2)
+                                        Text(c.symbol).font(.headline.bold())
+                                        Text(c.rawValue).font(.caption2.weight(.semibold))
+                                    }
+                                    .frame(width: 70)
+                                    .padding(.vertical, 12)
+                                    .glassEffect(currency == c ? .regular.tint(Color(white: 0.6)) : .regular, in: .rect(cornerRadius: 12))
+                                    .foregroundStyle(currency == c ? .white : Color(white: 0.38))
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .padding(.horizontal, 2).padding(.vertical, 2)
+                    }
                 }
-                .padding(14).glassEffect(in: .rect(cornerRadius: 14))
-            }
 
-            // Type
-            field(title: "TYPE", icon: "plusminus") {
-                HStack(spacing: 10) {
-                    typeBtn("Asset / Inflow", "arrow.up.circle.fill", true,  .neonGreen)
-                    typeBtn("Liability",      "arrow.down.circle.fill", false, .neonRed)
+                field(title: "BALANCE", icon: "banknote") {
+                    HStack(spacing: 10) {
+                        Text(currency.symbol).font(.headline).foregroundStyle(.glassText).frame(minWidth: 24)
+                        TextField("0", text: $balanceText)
+                            #if os(iOS)
+                            .keyboardType(.decimalPad)
+                            #endif
+                            .textFieldStyle(.plain).font(.headline).foregroundStyle(.white)
+                    }
+                    .padding(14).glassEffect(in: .rect(cornerRadius: 14))
+                }
+
+                field(title: "TYPE", icon: "plusminus") {
+                    HStack(spacing: 10) {
+                        typeBtn("Asset / Inflow", "arrow.up.circle.fill", true,  .neonGreen)
+                        typeBtn("Liability",      "arrow.down.circle.fill", false, .neonRed)
+                    }
                 }
             }
         }
+    }
+
+    private var canConfirmStock: Bool {
+        !stockSymbol.isEmpty && !stockLots.isEmpty && Double(stockPriceStr) != nil
     }
 
     private var saveBtn: some View {
@@ -228,6 +356,39 @@ struct AddEditWalletView: View {
         }
         .buttonStyle(.plain)
     }
+    
+    private func startEditing(_ stock: StockData) {
+        editingStockId = stock.id
+        stockSymbol = stock.symbol
+        stockLots = "\(stock.lots)"
+        stockPriceStr = "\(Int(stock.currentPrice))"
+    }
+    
+    private func cancelEditing() {
+        editingStockId = nil
+        stockSymbol = ""
+        stockLots = ""
+        stockPriceStr = ""
+    }
+
+    private func confirmStock() {
+        guard let lots = Int(stockLots), let price = Double(stockPriceStr) else { return }
+        
+        if let id = editingStockId, let idx = stocks.firstIndex(where: { $0.id == id }) {
+            // Update existing
+            stocks[idx].symbol = stockSymbol.uppercased()
+            stocks[idx].lots = lots
+            stocks[idx].currentPrice = price
+            stocks[idx].lastUpdated = Date()
+        } else {
+            // Add new
+            let stock = StockData(symbol: stockSymbol.uppercased(), lots: lots, currentPrice: price, lastUpdated: Date())
+            stocks.append(stock)
+        }
+        
+        // Reset
+        cancelEditing()
+    }
 
     private func prefill() {
         guard let w = editTarget else { return }
@@ -235,17 +396,33 @@ struct AddEditWalletView: View {
         balanceText = "\(Int(w.balance))"
         currency    = w.currency
         isPositive  = w.isPositive
-        imageData   = w.imageData // ✅ Prefill the image data if it exists
+        imageData   = w.imageData
+        isStock     = w.isStock
+        stocks      = w.stocks
     }
 
     private func save() {
-        let w = Wallet(id: editTarget?.id ?? UUID(),
+        var w = Wallet(id: editTarget?.id ?? UUID(),
                        name: name.trimmingCharacters(in: .whitespaces),
-                       balance: parsedBalance, 
+                       balance: isStock ? 0 : parsedBalance, 
                        currency: currency, 
                        isPositive: isPositive,
-                       imageData: imageData) // ✅ Include the chosen image data here
+                       imageData: imageData)
+        w.isStock = isStock
+        if isStock {
+            w.stocks = stocks
+            w.currency = .idr
+            w.balance = stocks.reduce(0) { $0 + $1.totalValue }
+        }
+        
         if isEditMode { store.updateWallet(w) } else { store.addWallet(w) }
         dismiss()
+    }
+    
+    private func formatNumber(_ value: Double) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.maximumFractionDigits = 0
+        return formatter.string(from: NSNumber(value: value)) ?? "\(Int(value))"
     }
 }

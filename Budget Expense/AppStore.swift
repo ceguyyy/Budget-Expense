@@ -86,6 +86,18 @@ enum Currency: String, CaseIterable, Codable {
     }
 }
 
+struct StockData: Codable, Identifiable {
+    var id: UUID = UUID()
+    var symbol: String
+    var lots: Int
+    var currentPrice: Double
+    var lastUpdated: Date
+    
+    var totalValue: Double {
+        return Double(lots) * 100 * currentPrice // 1 lot = 100 shares in Indonesia
+    }
+}
+
 // MARK: - Debit Wallet
 
 struct Wallet: Identifiable, Codable {
@@ -95,8 +107,17 @@ struct Wallet: Identifiable, Codable {
     var currency: Currency
     var isPositive: Bool
     var imageData: Data?
+    
+    // Stock support
+    var isStock: Bool = false
+    var stocks: [StockData] = []
 
-    var signedBalance: Double { isPositive ? balance : -balance }
+    var signedBalance: Double { 
+        if isStock {
+            return stocks.reduce(0) { $0 + $1.totalValue }
+        }
+        return isPositive ? balance : -balance 
+    }
     var initials: String { String(name.prefix(2)).uppercased() }
     var accentColor: Color { isPositive ? .neonGreen : .neonRed }
 
@@ -273,7 +294,7 @@ struct SplitBillRecord: Identifiable, Codable {
 
 struct MonthlyChartData: Identifiable {
     let id = UUID()
-    let month: String
+    let label: String
     let inflow: Double
     let outflow: Double
 }
@@ -575,7 +596,7 @@ class AppStore {
                 cal.component(.month, from: $0.date) == m
             }
             return MonthlyChartData(
-                month: fmt.string(from: date),
+                label: fmt.string(from: date),
                 inflow:  txs.filter { $0.type == .inflow  }.reduce(0) { $0 + $1.amount },
                 outflow: txs.filter { $0.type == .outflow }.reduce(0) { $0 + $1.amount }
             )

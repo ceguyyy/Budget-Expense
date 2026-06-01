@@ -9,9 +9,13 @@ import UIKit
 
 // MARK: - Chart Range Enum
 enum ChartRange: String, CaseIterable {
+    case today = "Today"
+    case thisWeek = "This Week"
+    case thisMonth = "This Month"
     case last3Months = "Last 3 Months"
     case last6Months = "Last 6 Months"
     case thisYear = "This Year"
+    case allTime = "All Time"
 }
 
 // MARK: - CC Liability Mode Enum
@@ -85,11 +89,11 @@ struct DashboardView: View {
     var body: some View {
         NavigationStack {
             ZStack(alignment: .bottomTrailing) {
-                Color.appBg
-                    .ignoresSafeArea()
+                Color.appBg.ignoresSafeArea()
 
-                ScrollView(showsIndicators: false) {
-                    VStack(spacing: 24) {
+                List {
+                    // Header and Static Cards
+                    Group {
                         headerBar
                         swipeableCards
                         metricsGrid
@@ -98,11 +102,16 @@ struct DashboardView: View {
                         Divider()
                         featureCardsSection
                         analyticsSection
-                        recentTransactionsSection
                     }
-                    .padding(.top, 8)
-                    .padding(.bottom, 120) 
-                }
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+                    .listRowInsets(EdgeInsets(top: 12, leading: 0, bottom: 12, trailing: 0))
+                    
+                    // Transaction Section
+                    recentTransactionsSection
+                    }
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
                 
                 HStack {
                     Spacer()
@@ -398,38 +407,81 @@ struct DashboardView: View {
     
     private var convertedChartData: [MonthlyChartData] {
         let cal = Calendar.current
-        let fmt = DateFormatter()
-        fmt.dateFormat = "MMM"
-        let monthCount: Int
-        switch selectedChartRange {
-        case .last3Months: monthCount = 3
-        case .last6Months: monthCount = 6
-        case .thisYear: monthCount = max(1, cal.component(.month, from: Date()))
-        }
+        let now = Date()
         
-        return (0..<monthCount).reversed().map { n in
-            let date = cal.date(byAdding: .month, value: -n, to: Date())!
-            let y = cal.component(.year, from: date)
-            let m = cal.component(.month, from: date)
-            let txs = store.walletTransactions.filter {
-                cal.component(.year, from: $0.date) == y &&
-                cal.component(.month, from: $0.date) == m
+        func calculateData(for date: Date, calendarComponent: Calendar.Component) -> (inflow: Double, outflow: Double) {
+            let txs = store.walletTransactions.filter { tx in
+                cal.isDate(tx.date, equalTo: date, toGranularity: calendarComponent)
             }
             
             let inflow = txs.filter { $0.type == .inflow }.reduce(0) { sum, tx in
                 let wallet = store.wallets.first { $0.id == tx.walletId }
                 guard let walletCurrency = wallet?.currency else { return sum }
-                let amountInBase = currencyManager.toBaseCurrency(amount: tx.amount, from: walletCurrency)
-                return sum + amountInBase
+                return sum + currencyManager.toBaseCurrency(amount: tx.amount, from: walletCurrency)
             }
             let outflow = txs.filter { $0.type == .outflow }.reduce(0) { sum, tx in
                 let wallet = store.wallets.first { $0.id == tx.walletId }
                 guard let walletCurrency = wallet?.currency else { return sum }
-                let amountInBase = currencyManager.toBaseCurrency(amount: tx.amount, from: walletCurrency)
-                return sum + amountInBase
+                return sum + currencyManager.toBaseCurrency(amount: tx.amount, from: walletCurrency)
+            }
+            return (inflow, outflow)
+        }
+
+        switch selectedChartRange {
+        case .today:
+            let fmt = DateFormatter(); fmt.dateFormat = "HH:mm"
+            return (0..<12).reversed().map { i in
+                let date = cal.date(byAdding: .hour, value: -i * 2, to: now)!
+                let (inflow, outflow) = calculateData(for: date, calendarComponent: .hour)
+                return MonthlyChartData(label: fmt.string(from: date), inflow: inflow, outflow: outflow)
             }
             
-            return MonthlyChartData(month: fmt.string(from: date), inflow: inflow, outflow: outflow)
+        case .thisWeek:
+            let fmt = DateFormatter(); fmt.dateFormat = "EEE"
+            return (0..<7).reversed().map { i in
+                let date = cal.date(byAdding: .day, value: -i, to: now)!
+                let (inflow, outflow) = calculateData(for: date, calendarComponent: .day)
+                return MonthlyChartData(label: fmt.string(from: date), inflow: inflow, outflow: outflow)
+            }
+            
+        case .thisMonth:
+            let fmt = DateFormatter(); fmt.dateFormat = "d/M"
+            return (0..<10).reversed().map { i in
+                let date = cal.date(byAdding: .day, value: -i * 3, to: now)!
+                var aggInflow = 0.0
+                var aggOutflow = 0.0
+                for d in 0..<3 {
+                    let subDate = cal.date(byAdding: .day, value: -d, to: date)!
+                    let (inf, out) = calculateData(for: subDate, calendarComponent: .day)
+                    aggInflow += inf
+                    aggOutflow += out
+                }
+                return MonthlyChartData(label: fmt.string(from: date), inflow: aggInflow, outflow: aggOutflow)
+            }
+
+        case .last3Months, .last6Months, .thisYear:
+            let fmt = DateFormatter(); fmt.dateFormat = "MMM"
+            let monthCount: Int
+            switch selectedChartRange {
+            case .last3Months: monthCount = 3
+            case .last6Months: monthCount = 6
+            case .thisYear: monthCount = cal.component(.month, from: now)
+            default: monthCount = 6
+            }
+            
+            return (0..<monthCount).reversed().map { i in
+                let date = cal.date(byAdding: .month, value: -i, to: now)!
+                let (inflow, outflow) = calculateData(for: date, calendarComponent: .month)
+                return MonthlyChartData(label: fmt.string(from: date), inflow: inflow, outflow: outflow)
+            }
+            
+        case .allTime:
+            let fmt = DateFormatter(); fmt.dateFormat = "yyyy"
+            return (0..<4).reversed().map { i in
+                let date = cal.date(byAdding: .year, value: -i, to: now)!
+                let (inflow, outflow) = calculateData(for: date, calendarComponent: .year)
+                return MonthlyChartData(label: fmt.string(from: date), inflow: inflow, outflow: outflow)
+            }
         }
     }
     
@@ -1444,159 +1496,253 @@ struct DashboardView: View {
             .padding(.top, 20)
             .padding(.bottom, 16)
             
-            // Summary Stats Row
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Total Inflow")
-                        .font(.caption2)
-                        .foregroundStyle(Color.warmCard.opacity(0.5))
-                    
-                    let totalInflow = convertedChartData.reduce(0) { $0 + $1.inflow }
-                    Text(formatNumber(totalInflow))
-                        .font(.subheadline.bold())
-                        .foregroundStyle(.neonGreen)
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(Color.neonGreen.opacity(0.1))
-                )
-                
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Total Outflow")
-                        .font(.caption2)
-                        .foregroundStyle(Color.warmCard.opacity(0.5))
-                    
-                    let totalOutflow = convertedChartData.reduce(0) { $0 + $1.outflow }
-                    Text(formatNumber(totalOutflow))
-                        .font(.subheadline.bold())
-                        .foregroundStyle(Color.warmOrange)
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(Color.warmOrange.opacity(0.1))
-                )
-                
-                Spacer()
-            }
-            .padding(.horizontal, 20)
-            .padding(.bottom, 16)
-            
-            // Enhanced Chart
+            // Aesthetic Chart
             Chart {
                 ForEach(convertedChartData) { item in
-                    BarMark(
-                        x: .value("Month", item.month),
-                        y: .value("Amount", item.inflow)
+                    // Inflow Area with Gradient
+                    AreaMark(
+                        x: .value("Month", item.label),
+                        y: .value("Inflow", item.inflow)
                     )
                     .foregroundStyle(
                         LinearGradient(
-                            colors: [.neonGreen, .neonGreen.opacity(0.7)],
+                            colors: [
+                                Color.neonGreen.opacity(0.4),
+                                Color.neonGreen.opacity(0.2),
+                                Color.neonGreen.opacity(0.01)
+                            ],
                             startPoint: .top,
                             endPoint: .bottom
                         )
                     )
-                    .position(by: .value("Type", "Inflow"))
-                    .cornerRadius(6)
+                    .interpolationMethod(.catmullRom)
+
+                    // Inflow Line
+                    LineMark(
+                        x: .value("Month", item.label),
+                        y: .value("Inflow", item.inflow)
+                    )
+                    .foregroundStyle(Color.neonGreen)
+                    .lineStyle(StrokeStyle(lineWidth: 3.5, lineCap: .round, lineJoin: .round))
+                    .interpolationMethod(.catmullRom)
                     
-                    BarMark(
-                        x: .value("Month", item.month),
-                        y: .value("Amount", item.outflow)
+                    // Inflow Points
+                    PointMark(
+                        x: .value("Month", item.label),
+                        y: .value("Inflow", item.inflow)
+                    )
+                    .foregroundStyle(.white)
+                    .symbol {
+                        Circle()
+                            .fill(Color.neonGreen)
+                            .frame(width: 8, height: 8)
+                            .overlay(Circle().stroke(Color.warmDark, lineWidth: 2))
+                            .shadow(color: .black.opacity(0.2), radius: 2)
+                    }
+
+                    // Outflow Area (Subtle)
+                    AreaMark(
+                        x: .value("Month", item.label),
+                        y: .value("Outflow", item.outflow)
                     )
                     .foregroundStyle(
                         LinearGradient(
-                            colors: [Color.warmOrange, Color.warmOrange.opacity(0.6)],
+                            colors: [
+                                Color.warmOrange.opacity(0.15),
+                                Color.warmOrange.opacity(0.05),
+                                Color.warmOrange.opacity(0.01)
+                            ],
                             startPoint: .top,
                             endPoint: .bottom
                         )
                     )
-                    .position(by: .value("Type", "Outflow"))
-                    .cornerRadius(6)
+                    .interpolationMethod(.catmullRom)
+
+                    // Outflow Line
+                    LineMark(
+                        x: .value("Month", item.label),
+                        y: .value("Outflow", item.outflow)
+                    )
+                    .foregroundStyle(Color.warmOrange)
+                    .lineStyle(StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round, dash: [6, 4]))
+                    .interpolationMethod(.catmullRom)
+                    
+                    // Outflow Points
+                    PointMark(
+                        x: .value("Month", item.label),
+                        y: .value("Outflow", item.outflow)
+                    )
+                    .foregroundStyle(.white)
+                    .symbol {
+                        Circle()
+                            .fill(Color.warmOrange)
+                            .frame(width: 6, height: 6)
+                            .overlay(Circle().stroke(Color.warmDark, lineWidth: 1.5))
+                    }
                 }
             }
             .chartXAxis {
-                AxisMarks { _ in
+                AxisMarks { value in
+                    AxisGridLine().foregroundStyle(Color.warmCard.opacity(0.05))
                     AxisValueLabel()
                         .foregroundStyle(Color.warmCard.opacity(0.45))
-                        .font(.caption2.weight(.medium))
+                        .font(.system(size: 10, weight: .bold, design: .rounded))
                 }
             }
-            .chartYAxis(.hidden)
+            .chartYAxis {
+                AxisMarks(position: .leading, values: .automatic(desiredCount: 4)) { value in
+                    AxisGridLine().foregroundStyle(Color.white.opacity(0.03))
+                    AxisValueLabel()
+                        .foregroundStyle(Color.warmCard.opacity(0.3))
+                        .font(.system(size: 9, weight: .medium, design: .monospaced))
+                }
+            }
             .chartLegend(.hidden)
-            .frame(height: 200)
+            .frame(height: 240)
             .padding(.horizontal, 20)
-            .padding(.bottom, 16)
+            .padding(.bottom, 24)
+            .chartYScale(range: .plotDimension(padding: 20))
             
             // Enhanced Legend
-            HStack(spacing: 20) {
-                HStack(spacing: 6) {
-                    RoundedRectangle(cornerRadius: 3)
-                        .fill(
-                            LinearGradient(
-                                colors: [.neonGreen, .neonGreen.opacity(0.7)],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
-                        .frame(width: 12, height: 12)
-                    
-                    Text("Inflow")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(Color.warmCard.opacity(0.7))
-                }
-                
-                HStack(spacing: 6) {
-                    RoundedRectangle(cornerRadius: 3)
-                        .fill(Color.warmOrange)
-                        .frame(width: 12, height: 12)
-
-                    Text("Outflow")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(Color.warmCard.opacity(0.7))
-                }
+            HStack(spacing: 28) {
+                legendItem(label: "Income", amount: convertedChartData.reduce(0) { $0 + $1.inflow }, color: .neonGreen, isLine: false)
+                legendItem(label: "Expense", amount: convertedChartData.reduce(0) { $0 + $1.outflow }, color: .warmOrange, isLine: true)
                 
                 Spacer()
                 
-                // Net Change Indicator
-                let totalInflow = convertedChartData.reduce(0) { $0 + $1.inflow }
-                let totalOutflow = convertedChartData.reduce(0) { $0 + $1.outflow }
-                let netChange = totalInflow - totalOutflow
-                
-                HStack(spacing: 4) {
-                    Image(systemName: netChange >= 0 ? "arrow.up.circle.fill" : "arrow.down.circle.fill")
-                        .font(.caption)
-                        .foregroundStyle(netChange >= 0 ? .neonGreen : .neonRed)
+                // Net Profit Badge
+                let net = convertedChartData.reduce(0) { $0 + $1.inflow } - convertedChartData.reduce(0) { $0 + $1.outflow }
+                VStack(alignment: .trailing, spacing: 4) {
+                    Text("NET BALANCE")
+                        .font(.system(size: 7, weight: .black))
+                        .foregroundStyle(Color.warmCard.opacity(0.35))
+                        .kerning(1)
                     
-                    Text("Net: \(formatNumber(abs(netChange)))")
-                        .font(.caption2.bold())
-                        .foregroundStyle(netChange >= 0 ? .neonGreen : .neonRed)
+                    HStack(spacing: 4) {
+                        Image(systemName: net >= 0 ? "plus.circle.fill" : "minus.circle.fill")
+                            .font(.system(size: 10))
+                        Text(formatNumber(abs(net)))
+                            .font(.system(size: 13, weight: .black, design: .rounded))
+                    }
+                    .foregroundStyle(net >= 0 ? .neonGreen : .neonRed)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(
+                        ZStack {
+                            Capsule().fill((net >= 0 ? Color.neonGreen : Color.neonRed).opacity(0.12))
+                            Capsule().stroke((net >= 0 ? Color.neonGreen : Color.neonRed).opacity(0.2), lineWidth: 1)
+                        }
+                    )
                 }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(
-                    Capsule()
-                        .fill((netChange >= 0 ? Color.neonGreen : Color.neonRed).opacity(0.15))
-                )
             }
-            .padding(.horizontal, 20)
-            .padding(.bottom, 20)
+            .padding(.horizontal, 24)
+            .padding(.bottom, 24)
         }
-        .background(Color.warmDark)
-        .clipShape(RoundedRectangle(cornerRadius: 18))
-        .shadow(color: .black.opacity(0.3), radius: 8, x: 0, y: 3)
+        .background(
+            ZStack {
+                Color.warmDark
+                
+                // Subtle Grid Background
+                GeometryReader { geo in
+                    VStack(spacing: 0) {
+                        ForEach(0..<6) { _ in
+                            Divider().background(Color.white.opacity(0.02))
+                            Spacer()
+                        }
+                    }
+                    HStack(spacing: 0) {
+                        ForEach(0..<6) { _ in
+                            Divider().background(Color.white.opacity(0.02))
+                            Spacer()
+                        }
+                    }
+                }
+            }
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 30))
+        .shadow(color: .black.opacity(0.4), radius: 15, x: 0, y: 10)
         .padding(.horizontal, 16)
+    }
+
+    private func legendItem(label: String, amount: Double, color: Color, isLine: Bool) -> some View {
+        HStack(spacing: 10) {
+            ZStack {
+                if isLine {
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(color)
+                        .frame(width: 14, height: 3)
+                } else {
+                    Circle()
+                        .fill(color)
+                        .frame(width: 8, height: 8)
+                        .shadow(color: color.opacity(0.5), radius: 3)
+                }
+            }
+            
+            VStack(alignment: .leading, spacing: 0) {
+                Text(label)
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(Color.warmCard.opacity(0.5))
+                Text(formatNumber(amount))
+                    .font(.system(size: 13, weight: .black, design: .rounded))
+                    .foregroundStyle(Color.warmCard)
+            }
+        }
     }
 
     // MARK: - Transactions List (Combined Wallet & CC)
 
+    @ViewBuilder
     private var recentTransactionsSection: some View {
-        VStack(spacing: 16) {
+        let wTxs = store.walletTransactions.map { AnyTransaction.wallet($0) }
+        let cTxs = store.creditCards.flatMap { card in
+            card.transactions.map { AnyTransaction.cc($0, cardId: card.id) }
+        }
+        let recentTxs = (wTxs + cTxs).sorted { $0.date > $1.date }.prefix(6)
+
+        Section {
+            if recentTxs.isEmpty {
+                Text("No recent transactions")
+                    .font(.subheadline)
+                    .foregroundStyle(Color.warmCard.opacity(0.4))
+                    .frame(maxWidth: .infinity)
+                    .padding(32)
+                    .background(Color.warmDark)
+                    .clipShape(RoundedRectangle(cornerRadius: 18))
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+                    .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 40, trailing: 16))
+            } else {
+                ForEach(recentTxs) { item in
+                    AnyTransactionRow(item: item, store: store, showBalances: showBalances)
+                        .background(Color.warmDark)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            switch item {
+                            case .wallet(let tx):
+                                editWalletTx = tx
+                            case .cc(let tx, let cardId):
+                                editCCTxWrapper = CCEditWrapper(cardId: cardId, tx: tx)
+                            }
+                        }
+                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                            Button(role: .destructive) {
+                                withAnimation {
+                                    deleteTransaction(item)
+                                }
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                        }
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
+                        .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                }
+            }
+        } header: {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Transactions")
+                    Text("Recent Activity")
                         .font(.system(size: 20, weight: .black))
                         .foregroundStyle(Color.warmCard)
                     Rectangle()
@@ -1607,47 +1753,17 @@ struct DashboardView: View {
                 Spacer()
             }
             .padding(.horizontal, 16)
+            .padding(.bottom, 8)
+            .textCase(nil)
+        }
+    }
 
-            // ✅ Combine both CC and Wallet transactions for recent view
-            let wTxs = store.walletTransactions.map { AnyTransaction.wallet($0) }
-            let cTxs = store.creditCards.flatMap { card in
-                card.transactions.map { AnyTransaction.cc($0, cardId: card.id) }
-            }
-            let recentTxs = (wTxs + cTxs).sorted { $0.date > $1.date }.prefix(4)
-            
-            if recentTxs.isEmpty {
-                Text("No recent transactions")
-                    .font(.subheadline)
-                    .foregroundStyle(Color.warmCard.opacity(0.4))
-                    .padding()
-            } else {
-                VStack(spacing: 0) {
-                    ForEach(Array(recentTxs.enumerated()), id: \.element.id) { index, item in
-                        Button {
-                            switch item {
-                            case .wallet(let tx):
-                                editWalletTx = tx
-                            case .cc(let tx, let cardId):
-                                editCCTxWrapper = CCEditWrapper(cardId: cardId, tx: tx)
-                            }
-                        } label: {
-                            AnyTransactionRow(item: item, store: store, showBalances: showBalances)
-                        }
-                        .buttonStyle(.plain)
-                        
-                        if index < recentTxs.count - 1 {
-                            Divider()
-                                .background(Color.warmCard.opacity(0.08))
-                                .padding(.leading, 74)
-                                .padding(.trailing, 16)
-                        }
-                    }
-                }
-                .background(Color.warmDark)
-                .clipShape(RoundedRectangle(cornerRadius: 18))
-                .shadow(color: .black.opacity(0.3), radius: 8, x: 0, y: 3)
-                .padding(.horizontal, 16)
-            }
+    private func deleteTransaction(_ item: AnyTransaction) {
+        switch item {
+        case .wallet(let tx):
+            store.deleteTransaction(tx)
+        case .cc(let tx, let cardId):
+            store.deleteCCTransaction(tx.id, from: cardId)
         }
     }
 }
@@ -1695,18 +1811,6 @@ struct EnhancedFeatureTile: View {
                 .foregroundStyle(Color.warmCard.opacity(0.45))
 
             Spacer(minLength: 0)
-
-            HStack {
-                Spacer()
-                ZStack {
-                    Circle()
-                        .fill(Color.warmOrange)
-                        .frame(width: 28, height: 28)
-                    Image(systemName: "arrow.right")
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(Color.warmCard)
-                }
-            }
         }
         .padding(16)
         .frame(maxWidth: .infinity)

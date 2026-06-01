@@ -377,22 +377,11 @@ class DashboardViewModel {
     
     var convertedChartData: [MonthlyChartData] {
         let cal = Calendar.current
-        let fmt = DateFormatter()
-        fmt.dateFormat = "MMM"
-        let monthCount: Int
-        switch selectedChartRange {
-        case .last3Months: monthCount = 3
-        case .last6Months: monthCount = 6
-        case .thisYear: monthCount = max(1, cal.component(.month, from: Date()))
-        }
+        let now = Date()
         
-        return (0..<monthCount).reversed().map { n in
-            let date = cal.date(byAdding: .month, value: -n, to: Date())!
-            let y = cal.component(.year, from: date)
-            let m = cal.component(.month, from: date)
-            let txs = store.walletTransactions.filter {
-                cal.component(.year, from: $0.date) == y &&
-                cal.component(.month, from: $0.date) == m
+        func calculateData(for date: Date, calendarComponent: Calendar.Component) -> (inflow: Double, outflow: Double) {
+            let txs = store.walletTransactions.filter { tx in
+                cal.isDate(tx.date, equalTo: date, toGranularity: calendarComponent)
             }
             
             let inflow = txs.filter { $0.type == .inflow }.reduce(0) { sum, tx in
@@ -405,8 +394,64 @@ class DashboardViewModel {
                 guard let walletCurrency = wallet?.currency else { return sum }
                 return sum + currencyManager.toBaseCurrency(amount: tx.amount, from: walletCurrency)
             }
+            return (inflow, outflow)
+        }
+
+        switch selectedChartRange {
+        case .today:
+            let fmt = DateFormatter(); fmt.dateFormat = "HH:mm"
+            return (0..<12).reversed().map { i in
+                let date = cal.date(byAdding: .hour, value: -i * 2, to: now)!
+                let (inflow, outflow) = calculateData(for: date, calendarComponent: .hour)
+                return MonthlyChartData(label: fmt.string(from: date), inflow: inflow, outflow: outflow)
+            }
             
-            return MonthlyChartData(month: fmt.string(from: date), inflow: inflow, outflow: outflow)
+        case .thisWeek:
+            let fmt = DateFormatter(); fmt.dateFormat = "EEE"
+            return (0..<7).reversed().map { i in
+                let date = cal.date(byAdding: .day, value: -i, to: now)!
+                let (inflow, outflow) = calculateData(for: date, calendarComponent: .day)
+                return MonthlyChartData(label: fmt.string(from: date), inflow: inflow, outflow: outflow)
+            }
+            
+        case .thisMonth:
+            let fmt = DateFormatter(); fmt.dateFormat = "d/M"
+            return (0..<10).reversed().map { i in
+                let date = cal.date(byAdding: .day, value: -i * 3, to: now)!
+                var aggInflow = 0.0
+                var aggOutflow = 0.0
+                for d in 0..<3 {
+                    let subDate = cal.date(byAdding: .day, value: -d, to: date)!
+                    let (inf, out) = calculateData(for: subDate, calendarComponent: .day)
+                    aggInflow += inf
+                    aggOutflow += out
+                }
+                return MonthlyChartData(label: fmt.string(from: date), inflow: aggInflow, outflow: aggOutflow)
+            }
+
+        case .last3Months, .last6Months, .thisYear:
+            let fmt = DateFormatter(); fmt.dateFormat = "MMM"
+            let monthCount: Int
+            switch selectedChartRange {
+            case .last3Months: monthCount = 3
+            case .last6Months: monthCount = 6
+            case .thisYear: monthCount = cal.component(.month, from: now)
+            default: monthCount = 6
+            }
+            
+            return (0..<monthCount).reversed().map { i in
+                let date = cal.date(byAdding: .month, value: -i, to: now)!
+                let (inflow, outflow) = calculateData(for: date, calendarComponent: .month)
+                return MonthlyChartData(label: fmt.string(from: date), inflow: inflow, outflow: outflow)
+            }
+            
+        case .allTime:
+            let fmt = DateFormatter(); fmt.dateFormat = "yyyy"
+            return (0..<4).reversed().map { i in
+                let date = cal.date(byAdding: .year, value: -i, to: now)!
+                let (inflow, outflow) = calculateData(for: date, calendarComponent: .year)
+                return MonthlyChartData(label: fmt.string(from: date), inflow: inflow, outflow: outflow)
+            }
         }
     }
     
