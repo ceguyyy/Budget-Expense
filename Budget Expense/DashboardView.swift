@@ -66,6 +66,8 @@ struct DashboardView: View {
     @State private var showUniversalAdd = false
     @State private var editCCTarget: CreditCard? // For editing the card itself
     
+    @State private var showLiabilityModeDialog = false
+    
     // ✅ State for editing transactions directly from dashboard
     @State private var editWalletTx: WalletTransaction?
     @State private var editCCTxWrapper: CCEditWrapper?
@@ -543,6 +545,9 @@ struct DashboardView: View {
                 .onTapGesture {
                     showBalanceBreakdown = true
                 }
+                .onLongPressGesture {
+                    showLiabilityModeDialog = true
+                }
                 .contextMenu {
                     Button(action: { ccLiabilityMode = .total }) {
                         Label("Subtract Total CC Debt", systemImage: ccLiabilityMode == .total ? "checkmark.circle.fill" : "circle")
@@ -550,6 +555,13 @@ struct DashboardView: View {
                     Button(action: { ccLiabilityMode = .monthly }) {
                         Label("Subtract This Month's CC Due", systemImage: ccLiabilityMode == .monthly ? "checkmark.circle.fill" : "circle")
                     }
+                }
+                .confirmationDialog("Calculation Mode", isPresented: $showLiabilityModeDialog, titleVisibility: .visible) {
+                    Button("Subtract Total CC Debt") { ccLiabilityMode = .total }
+                    Button("Subtract This Month's CC Due") { ccLiabilityMode = .monthly }
+                    Button("Cancel", role: .cancel) { }
+                } message: {
+                    Text("Choose how credit card debt affects your Total Balance calculation.")
                 }
 
                 balanceCard(
